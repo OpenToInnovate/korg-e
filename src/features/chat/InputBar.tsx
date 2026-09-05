@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react';
-import { Mic, Paperclip, X, Loader2, ArrowUp, FileText, FolderOpen, Command } from 'lucide-react';
+import { Mic, X, Loader2, ArrowUp, FileText, FolderOpen, Command } from 'lucide-react';
 import type { TreeEntry } from '@/features/file-browser';
 import { useVoiceInput } from '@/features/voice/useVoiceInput';
 import { useTabCompletion } from '@/hooks/useTabCompletion';
@@ -677,7 +677,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
 
-  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
+  const { voiceState, interimTranscript, startRecording, stopAndTranscribe, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
     const input = inputRef.current;
     if (input) {
       input.value = '';
@@ -1470,9 +1470,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         className="hidden"
         onChange={e => { if (e.target.files) { processFiles(e.target.files); e.target.value = ''; } }}
       />
-      {/* Input row */}
+      {/* Input row — Grok-style pill composer */}
       <div
-        className={`relative flex items-start gap-0 border-t shrink-0 bg-card focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_8px_rgba(232,168,56,0.1)] ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.3)]' : 'border-border'}`}
+        className={`grok-composer relative flex items-center gap-1 shrink-0 mx-3 mb-2 mt-1 rounded-[26px] border bg-card px-2 py-1.5 focus-within:border-primary/60 ${voiceState === 'recording' ? 'border-red-500' : 'border-border'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -1488,7 +1488,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             <Mic size={14} className="text-primary" />
           </span>
         ) : (
-          <span className="self-start text-primary text-base leading-none font-bold pl-3.5 pt-3 shrink-0 animate-prompt-pulse">›</span>
+          <button
+            type="button"
+            onClick={openUploadFilesPicker}
+            disabled={!uploadsEnabled}
+            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xl leading-none text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            title={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
+            aria-label={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
+          >
+            +
+          </button>
         )}
         {/* Uncontrolled textarea — value is read/written via inputRef.
             This is intentional: useTabCompletion and history navigation
@@ -1538,10 +1547,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           onSelect={e => syncSlashStateFromInput(e.currentTarget)}
-          placeholder="Message..."
+          placeholder="What do you want to know?"
           aria-label="Message input"
           rows={1}
-          className="flex-1 font-mono text-[13px] bg-transparent text-foreground border-none px-2.5 py-3 resize-none outline-none min-h-[42px] max-h-[160px]"
+          className="flex-1 text-[15px] bg-transparent text-foreground border-none px-2 py-2.5 resize-none outline-none min-h-[44px] max-h-[160px] placeholder:text-muted-foreground"
         />
         {showCommandPaletteButton && onOpenCommandPalette && (
           <button
@@ -1556,31 +1565,31 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         )}
         <button
           type="button"
-          onClick={openUploadFilesPicker}
-          disabled={!uploadsEnabled}
-          className="bg-transparent border-none text-muted-foreground hover:text-primary cursor-pointer px-2 self-stretch h-full flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-          title={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
-          aria-label={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
+          onClick={() => { if (voiceState === 'recording') { stopAndTranscribe(); } else { void startRecording(); } }}
+          disabled={voiceState === 'transcribing' || voiceState === 'listening'}
+          aria-label={voiceState === 'recording' ? 'Stop and transcribe' : 'Start voice input'}
+          title={voiceState === 'recording' ? 'Stop and transcribe' : 'Voice input'}
+          className={`shrink-0 w-9 h-9 rounded-full border-none flex items-center justify-center cursor-pointer transition-colors ${voiceState === 'recording' ? 'bg-red text-white' : 'bg-secondary text-foreground hover:bg-accent'} ${voiceState === 'transcribing' || voiceState === 'listening' ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          <Paperclip size={16} />
+          {voiceState === 'transcribing' || voiceState === 'listening' ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Mic size={16} aria-hidden="true" />}
         </button>
         <button
           onClick={() => { void handleSend(); }}
           disabled={isGenerating || isPreparingInline}
           aria-label={isGenerating ? 'Generating response...' : (isPreparingInline ? 'Preparing attachments...' : 'Send message')}
           aria-busy={isGenerating || isPreparingInline}
-          className={`send-btn font-mono bg-primary text-primary-foreground border-none px-4.5 text-sm cursor-pointer font-bold self-stretch flex items-center justify-center transition-transform ${isGenerating || isPreparingInline ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
+          className={`send-btn grok-send shrink-0 w-9 h-9 rounded-full bg-primary text-primary-foreground border-none text-sm cursor-pointer font-bold flex items-center justify-center transition-transform ${isGenerating || isPreparingInline ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
         >
           {isGenerating || isPreparingInline ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
         </button>
       </div>
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground px-4 pb-1.5 pl-10 bg-card">
+      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground px-4 pb-2">
         <span>
           {voiceState === 'recording'
             ? 'Recording… Left Shift to send · Double Left Shift to discard'
             : voiceState === 'transcribing'
             ? 'Transcribing…'
-            : 'Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · ⌘K command palette'}
+            : 'Enter to send · Shift+Enter for newline · Double Left Shift for voice · ⌘K commands'}
         </span>
       </div>
       {voiceError && (

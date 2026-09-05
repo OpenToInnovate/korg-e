@@ -3,7 +3,6 @@ import type { TreeNode } from './sessionTree';
 import type { GranularAgentState } from '@/types';
 import { fmtK } from '@/lib/formatting';
 import { cn } from '@/lib/utils';
-import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { PROGRESS_BAR_TRANSITION } from '@/lib/progress-colors';
 import { getStatusBadgeText, getStatusBadgeClasses } from './statusUtils';
 import { ChevronRight, ChevronDown, EllipsisVertical, PenLine, Timer, CornerDownRight } from 'lucide-react';
@@ -27,6 +26,38 @@ const COLORS_NORMAL = {
   glow: 'rgba(76, 175, 80, 0.3)',
   growGlow: 'rgba(76, 175, 80, 0.5)',
 } as const;
+
+// Grokbot-style avatar blobs: stable color per session, two "eyes"
+const AVATAR_COLORS = ['#7C5CFF', '#3B82F6', '#F59E0B', '#EF4444', '#10B981', '#EC4899', '#8B5CF6', '#14B8A6'] as const;
+
+function avatarColor(key: string): string {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+function SessionAvatar({ sessionKey, label }: { sessionKey: string; label: string }) {
+  const color = avatarColor(sessionKey || label);
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]"
+      style={{ backgroundColor: color }}
+    >
+      <span className="flex gap-1">
+        <span className="h-1.5 w-1 rounded-full bg-black/70" />
+        <span className="h-1.5 w-1 rounded-full bg-black/70" />
+      </span>
+    </span>
+  );
+}
+
+function formatRowTime(session: { lastActivity?: string | number; updatedAt?: number }): string {
+  const raw = session.lastActivity ?? session.updatedAt;
+  const ms = typeof raw === 'string' ? Date.parse(raw) : raw;
+  if (!ms || Number.isNaN(ms)) return '';
+  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
 
 interface SessionNodeProps {
   node: TreeNode;
@@ -191,6 +222,8 @@ export const SessionNode = memo(function SessionNode({
     : granularStatus
       ? getStatusBadgeClasses(granularStatus)
       : (running ? 'bg-green/20 text-green' : 'bg-muted-foreground/20 text-muted-foreground');
+  const rowTime = formatRowTime(node.session);
+  const previewLine = node.session.model ? `${fmtK(displayTokens)} tok · ${node.session.model}` : `${fmtK(displayTokens)} tok`;
 
   // Indentation: 14px per depth level
   const indent = depth * 14;
@@ -198,9 +231,7 @@ export const SessionNode = memo(function SessionNode({
   return (
     <div
       className={cn(
-        'group relative w-full flex items-center border-b border-border/40 text-xs hover:bg-secondary',
-        isActive && 'border-l-[3px] border-l-primary bg-primary/5 shadow-[inset_0_0_12px_rgba(232,168,56,0.06)]',
-        isUnread && !isActive && 'bg-green/5',
+        'group relative w-full px-1.5 py-0.5 text-xs',
         isCronRun && !isActive && 'opacity-60'
       )}
     >
@@ -217,83 +248,87 @@ export const SessionNode = memo(function SessionNode({
         onClick={handleSelect}
         aria-current={isActive ? 'true' : undefined}
         className={cn(
-          'flex-1 min-w-0 flex items-center gap-2 bg-transparent border-0 text-left cursor-pointer py-2',
-          compact ? 'pr-1' : 'pr-3'
+          'relative flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-xl border-0 px-2 py-2 text-left transition-colors',
+          isActive ? 'bg-secondary' : 'hover:bg-secondary/60',
+          isUnread && !isActive && 'bg-secondary/40'
         )}
         style={{ paddingLeft: `${indent + 8}px` }}
       >
         {/* Collapse/expand chevron for nodes with children */}
-        {hasChildren ? (
+        {hasChildren && (
           <span
             role="button"
             tabIndex={0}
             onClick={handleToggle}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggle(e as unknown as React.MouseEvent); } }}
-            className="shrink-0 w-4 h-4 flex items-center justify-center bg-transparent border-0 cursor-pointer text-muted-foreground hover:text-foreground p-0"
+            className="shrink-0 flex h-3 w-3 items-center justify-center border-0 bg-transparent p-0 text-muted-foreground hover:text-foreground cursor-pointer"
             aria-label={isExpanded ? 'Collapse' : 'Expand'}
           >
-            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           </span>
-        ) : (
-          // Spacer to keep alignment when no chevron
-          depth > 0 ? <span className="shrink-0 w-4" /> : null
         )}
 
-        {/* Label (or rename input) */}
-        {isRenaming ? (
-          <input
-            ref={renameInputRef}
-            type="text"
-            value={renameValue}
-            onChange={(e) => onRenameChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') onRenameCommit();
-              if (e.key === 'Escape') onRenameCancel();
-            }}
-            onBlur={onRenameCommit}
-            onClick={(e) => e.stopPropagation()}
-            className="text-foreground text-[0.667rem] font-bold flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 font-mono focus:outline-none focus:border-primary"
-          />
-        ) : (
-          <SessionInfoPanel session={node.session} running={running}>
-            <span className={cn(
-              "text-[0.667rem] font-bold flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap cursor-pointer",
-              isCronRun ? "text-muted-foreground font-normal" : "text-foreground"
-            )}>
-              {isCron && <Timer size={11} className="text-purple mr-1 inline shrink-0" aria-label="Cron job" />}
-              {isCronRun && <CornerDownRight size={10} className="text-purple/60 mr-1 inline shrink-0" aria-label="Cron run" />}
-              {label}
+        <SessionAvatar sessionKey={sessionKey} label={label} />
+
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {/* Label (or rename input) + time */}
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={renameValue}
+              onChange={(e) => onRenameChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onRenameCommit();
+                if (e.key === 'Escape') onRenameCancel();
+              }}
+              onBlur={onRenameCommit}
+              onClick={(e) => e.stopPropagation()}
+              className="text-foreground text-[0.8125rem] font-semibold flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 rounded focus:outline-none focus:border-primary"
+            />
+          ) : (
+            <SessionInfoPanel session={node.session} running={running}>
+              <span className="flex w-full items-baseline gap-2">
+                <span className={cn(
+                  "min-w-0 flex-1 truncate cursor-pointer text-[0.8125rem] font-semibold",
+                  isCronRun ? "text-muted-foreground font-normal" : "text-foreground"
+                )}>
+                  {isCron && <Timer size={11} className="text-purple mr-1 inline shrink-0" aria-label="Cron job" />}
+                  {isCronRun && <CornerDownRight size={10} className="text-purple/60 mr-1 inline shrink-0" aria-label="Cron run" />}
+                  {label}
+                </span>
+                <span className="shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground">
+                  {rowTime}
+                </span>
+              </span>
+            </SessionInfoPanel>
+          )}
+
+          {/* Status + usage preview line */}
+          <span className="flex min-w-0 items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
+            <span className={`shrink-0 rounded px-1 py-px text-[0.5625rem] font-bold uppercase tracking-wider ${badgeClasses}`}>
+              {badgeText}
             </span>
-          </SessionInfoPanel>
-        )}
-
-        {/* Progress bar */}
-        <div className="w-12 h-1.5 bg-background border border-border/60 overflow-hidden shrink-0">
-          <div
-            className={`h-full ${colors.bar}`}
-            style={{
-              width: `${pct}%`,
-              boxShadow,
-              transition: PROGRESS_BAR_TRANSITION,
-            }}
-          />
-        </div>
-
-        {/* Token count */}
-        <AnimatedNumber
-          value={displayTokens}
-          format={fmtK}
-          className="text-muted-foreground text-[0.6rem] w-14 text-right shrink-0"
-          duration={700}
-        />
-
-        {/* Unread indicator + Status badge */}
-        {isUnread && <span className="unread-dot" aria-label="Unread" />}
-        <span
-          className={`text-[0.6rem] font-bold tracking-[1px] uppercase px-1.5 py-0.5 rounded-sm shrink-0 ${badgeClasses}`}
-        >
-          {badgeText}
+            <span className="truncate">{previewLine}</span>
+          </span>
         </span>
+
+        {/* Unread indicator */}
+        {isUnread && <span className="unread-dot shrink-0" aria-label="Unread" />}
+
+        {/* Live progress sliver while running */}
+        {running && (
+          <span className="pointer-events-none absolute inset-x-2 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-background/60">
+            <span
+              className={`block h-full ${colors.bar}`}
+              style={{
+                width: `${pct}%`,
+                boxShadow,
+                transition: PROGRESS_BAR_TRANSITION,
+              }}
+            />
+          </span>
+        )}
       </button>
 
       {compact ? (

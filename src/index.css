@@ -1473,3 +1473,44 @@
     transition-duration: 0.001s !important;
   }
 }
+
+/* ─── Grok-style thread + sidebar pass ─────────────────────────────── */
+/* Centered airy thread */
+div[role="log"] {
+  max-width: 52rem;
+  margin-inline: auto;
+  width: 100%;
+}
+/* Grokbot-style bubbles */
+.grok-bubble {
+  border-radius: 1rem;
+  padding: 0.625rem 1rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.grok-bubble-user {
+  background: var(--color-message-user);
+}
+.grok-bubble-assistant {
+  background: var(--color-message-assistant);
+}
+.grok-bubble .msg-body {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+/* Assistant: transparent, roomier */
+.msg.msg-assistant .msg-body {
+  font-size: 1rem;
+  line-height: 1.75;
+}
+/* Slimmer sidebar session rows */
+[data-session-node] {
+  font-size: 0.8125rem;
+}
+/* Pill composer focus ring */
+.grok-composer:focus-within {
+  box-shadow: 0 0 0 1px var(--color-ring);
+}
+.grok-composer textarea {
+  font-family: var(--font-sans);
+}

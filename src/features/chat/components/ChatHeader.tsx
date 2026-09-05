@@ -14,6 +14,8 @@ interface ChatHeaderProps {
   onToggleMobileTopBar?: () => void;
   /** Whether the mobile top bar is currently hidden. */
   isMobileTopBarHidden?: boolean;
+  /** Agent display name shown in the header. */
+  agentName?: string;
 }
 
 /**
@@ -30,6 +32,7 @@ export function ChatHeader({
   isFileBrowserCollapsed = true,
   onToggleMobileTopBar,
   isMobileTopBarHidden = false,
+  agentName = 'Agent',
 }: ChatHeaderProps) {
   const {
     modelOptions,
@@ -49,7 +52,7 @@ export function ChatHeader({
     : [{ value: '', label: 'No configured models' }];
 
   return (
-    <div className="panel-header items-center gap-2 overflow-x-auto border-l-[3px] border-l-primary/70 px-2.5 py-2 whitespace-nowrap sm:gap-2.5 sm:px-3 sm:py-3">
+    <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap border-b border-border/60 px-3 py-2.5 sm:gap-2.5 sm:px-4">
       {/* Mobile chrome controls */}
       {onToggleMobileTopBar ? (
         <div className="shell-panel flex size-11 shrink-0 flex-col overflow-hidden max-[371px]:size-[38px]">
@@ -83,11 +86,14 @@ export function ChatHeader({
           <PanelLeftOpen size={17} />
         </button>
       )}
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="cockpit-badge" data-tone="primary">
-          <span className="text-[0.533rem]">◆</span>
-          Comms
+      <div className="flex min-w-0 shrink-0 items-center gap-2.5">
+        <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-primary">
+          <span className="flex gap-[3px]">
+            <span className="h-1.5 w-1 rounded-full bg-primary-foreground/80" />
+            <span className="h-1.5 w-1 rounded-full bg-primary-foreground/80" />
+          </span>
         </span>
+        <span className="truncate text-[0.9375rem] font-semibold text-foreground">{agentName}</span>
       </div>
 
       {/* Model + Effort selectors on the right */}

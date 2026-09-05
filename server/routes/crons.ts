@@ -16,7 +16,41 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { config } from '../lib/config.js';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
+import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
+
+// Gateway 2026.9.2 requires agent-run context for the `cron` HTTP tool
+// ("trusted operational run instance"), so cron routes go through the
+// persistent gateway WebSocket RPC (same channel the CLI uses) instead
+// of POST /tools/invoke. gateway-rpc carries the paired device identity.
+const GATEWAY_CRON_TIMEOUT_MS = 15_000;
+async function cronRpc(
+  action: 'list' | 'add' | 'update' | 'remove' | 'run' | 'runs',
+  args: Record<string, unknown>,
+  timeoutMs = GATEWAY_CRON_TIMEOUT_MS,
+): Promise<unknown> {
+  const { action: _omit, jobId, job, ...rest } = args as {
+    action?: string; jobId?: string; job?: Record<string, unknown>;
+  } & Record<string, unknown>;
+  void _omit;
+  if (action === 'add') {
+    return gatewayRpcCall('cron.add', { ...(job ?? {}), ...rest }, timeoutMs);
+  }
+  if (action === 'run') {
+    return gatewayRpcCall(
+      'cron.run',
+      { id: jobId, mode: 'force', ...rest },
+      timeoutMs,
+    );
+  }
+  if (action === 'update') {
+    return gatewayRpcCall('cron.update', { id: jobId, ...rest }, timeoutMs);
+  }
+  if (action === 'remove') {
+    return gatewayRpcCall('cron.remove', { id: jobId, ...rest }, timeoutMs);
+  }
+  return gatewayRpcCall(`cron.${action}`, { jobId, ...rest }, timeoutMs);
+}
 
 const scheduleSchema = z.union([
   z.object({ kind: z.literal('at'), at: z.string() }),
@@ -211,8 +245,7 @@ function replaceCronJobsInResult(result: unknown, jobs: Record<string, unknown>[
 
 async function getGatewayCronRunEntries(jobId: string): Promise<Record<string, unknown>[]> {
   try {
-    const gatewayResult = await invokeGatewayTool('cron', {
-      action: 'runs',
+    const gatewayResult = await cronRpc('runs', {
       jobId,
       limit: 10,
     });
@@ -253,8 +286,7 @@ function buildCronSpawnLabel(job: Record<string, unknown>): string {
 
 app.get('/api/crons', rateLimitGeneral, async (c) => {
   try {
-    const result = await invokeGatewayTool('cron', {
-      action: 'list',
+    const result = await cronRpc('list', {
       includeDisabled: true,
     });
     const jobs = getCronJobsFromResult(result);
@@ -273,8 +305,7 @@ app.post('/api/crons', rateLimitGeneral, async (c) => {
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
     const body = parsed.data;
     const normalizedJob = normalizeCronTarget(body.job);
-    const result = await invokeGatewayTool('cron', {
-      action: 'add',
+    const result = await cronRpc('add', {
       job: normalizedJob,
     });
     return c.json({ ok: true, result });
@@ -292,8 +323,7 @@ app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
     if (!parsed.success) return c.json({ ok: false, error: parsed.error.issues[0]?.message || 'Invalid body' }, 400);
     const body = parsed.data;
     const normalizedPatch = normalizeCronTarget(body.patch);
-    const result = await invokeGatewayTool('cron', {
-      action: 'update',
+    const result = await cronRpc('update', {
       jobId: id,
       patch: normalizedPatch,
     });
@@ -307,8 +337,7 @@ app.patch('/api/crons/:id', rateLimitGeneral, async (c) => {
 app.delete('/api/crons/:id', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
   try {
-    const result = await invokeGatewayTool('cron', {
-      action: 'remove',
+    const result = await cronRpc('remove', {
       jobId: id,
     });
     return c.json({ ok: true, result });
@@ -323,8 +352,7 @@ app.post('/api/crons/:id/toggle', rateLimitGeneral, async (c) => {
   // Get current state first, then flip
   try {
     const body = await c.req.json<{ enabled: boolean }>().catch(() => ({ enabled: true }));
-    const result = await invokeGatewayTool('cron', {
-      action: 'update',
+    const result = await cronRpc('update', {
       jobId: id,
       patch: { enabled: body.enabled },
     });
@@ -338,8 +366,7 @@ app.post('/api/crons/:id/toggle', rateLimitGeneral, async (c) => {
 app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
   try {
-    const listResult = await invokeGatewayTool('cron', {
-      action: 'list',
+    const listResult = await cronRpc('list', {
       includeDisabled: true,
     }, GATEWAY_RUN_TIMEOUT_MS) as Record<string, unknown>;
     const jobs = getCronJobsFromResult(listResult);
@@ -386,8 +413,7 @@ app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
       return c.json({ ok: true, result });
     }
 
-    const result = await invokeGatewayTool('cron', {
-      action: 'run',
+    const result = await cronRpc('run', {
       jobId: id,
     }, GATEWAY_RUN_TIMEOUT_MS);
     return c.json({ ok: true, result });

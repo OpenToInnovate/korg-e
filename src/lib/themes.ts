@@ -1,6 +1,7 @@
 // Theme definitions for Nerve UI
 
 export type ThemeName =
+  | 'grok'
   | 'midnight'
   | 'light'
   | 'phosphor'
@@ -23,6 +24,56 @@ export interface Theme {
 }
 
 export const themes: Record<ThemeName, Theme> = {
+  'grok': {
+    name: 'grok',
+    label: 'Grok Dark',
+    colors: {
+      '--color-background': '#000000',
+      '--color-foreground': '#E7E9EA',
+      '--color-card': '#1c1c1c',
+      '--color-card-foreground': '#E7E9EA',
+      '--color-popover': '#1c1c1c',
+      '--color-popover-foreground': '#E7E9EA',
+      '--color-primary': '#FFFFFF',
+      '--color-primary-foreground': '#000000',
+      '--color-secondary': '#242424',
+      '--color-secondary-foreground': '#E7E9EA',
+      '--color-muted': '#1c1c1c',
+      '--color-muted-foreground': '#71767B',
+      '--color-accent': '#242424',
+      '--color-accent-foreground': '#E7E9EA',
+      '--color-destructive': '#F4212E',
+      '--color-destructive-foreground': '#FFFFFF',
+      '--color-border': '#2a2a2a',
+      '--color-input': '#242424',
+      '--color-ring': '#FFFFFF',
+      '--color-green': '#00BA7C',
+      '--color-red': '#F4212E',
+      '--color-orange': '#FF7A00',
+      '--color-purple': '#7856FF',
+      '--color-info': '#1D9BF0',
+      '--color-message-user': '#565656',
+      '--color-message-assistant': '#242424',
+      '--color-message-system': '#141414',
+      '--color-scrollbar': '#2a2a2a',
+      '--color-scrollbar-hover': '#536471',
+      // Sidebar colors
+      '--color-sidebar': '#121212',
+      '--color-sidebar-foreground': '#E7E9EA',
+      '--color-sidebar-primary': '#FFFFFF',
+      '--color-sidebar-primary-foreground': '#000000',
+      '--color-sidebar-accent': '#242424',
+      '--color-sidebar-accent-foreground': '#E7E9EA',
+      '--color-sidebar-border': '#2a2a2a',
+      '--color-sidebar-ring': '#FFFFFF',
+      // Chart colors
+      '--color-chart-1': '#1D9BF0',
+      '--color-chart-2': '#00BA7C',
+      '--color-chart-3': '#7856FF',
+      '--color-chart-4': '#F4212E',
+      '--color-chart-5': '#FF7A00',
+    },
+  },
   'midnight': {
     name: 'midnight',
     label: 'Midnight',
@@ -730,6 +781,7 @@ export const themeNames = Object.keys(themes) as ThemeName[];
 
 // Highlight.js theme mapping
 const hljsThemes: Record<ThemeName, string> = {
+  'grok': 'github-dark-dimmed',
   'midnight': 'github-dark-dimmed',
   'light': 'github',
   'phosphor': 'github-dark-dimmed',

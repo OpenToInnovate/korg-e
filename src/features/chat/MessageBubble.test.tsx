@@ -39,12 +39,12 @@ describe('MessageBubble', () => {
 
     const bubble = container.querySelector('.msg-user');
     const body = container.querySelector('.msg-body');
+    const pill = container.querySelector('.grok-bubble-user');
 
     expect(bubble).toBeTruthy();
-    expect(bubble?.className).toContain('ml-auto');
-    expect(bubble?.className).toContain('w-fit');
+    expect(bubble?.className).toContain('justify-end');
+    expect(pill).toBeTruthy();
     expect(body).toBeTruthy();
-    expect(body?.className).toContain('text-left');
   });
 
   it('re-renders when onOpenWorkspacePath changes', async () => {

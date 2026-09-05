@@ -27,6 +27,7 @@ export interface CommandActions {
 }
 
 const THEME_LABELS: Record<ThemeName, string> = {
+  'grok': 'Grok Dark',
   'midnight': 'Midnight',
   'light': 'Light',
   'phosphor': 'Phosphor',

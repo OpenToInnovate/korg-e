@@ -3,7 +3,6 @@ import { MemoriesSection } from './MemoriesSection';
 import { ImageLightbox } from './ImageLightbox';
 import { isMessageCollapsible } from './types';
 import { decodeHtmlEntities } from '@/lib/formatting';
-import { isStructuredMarkdown } from '@/lib/text/isStructuredMarkdown';
 import type { ChatMsg } from './types';
 import type { BeadLinkTarget } from '@/features/beads';
 
@@ -57,33 +56,7 @@ interface MessageBubbleProps {
   onOpenBeadId?: (target: BeadLinkTarget) => void | Promise<void>;
 }
 
-const borderClass = (role: string) => {
-  if (role === 'user') return 'border-l-primary';
-  if (role === 'assistant') return 'border-l-green';
-  return 'border-l-muted-foreground';
-};
-
-const bgClass = (role: string) => {
-  if (role === 'user') return 'bg-message-user';
-  if (role === 'assistant') return 'bg-message-assistant';
-  if (role === 'system' || role === 'event') return 'bg-message-system';
-  return '';
-};
-
-function RoleBadge({ role, agentName = 'Agent' }: { role: string; agentName?: string }) {
-  if (role === 'user') {
-    return <span className="cockpit-badge" data-tone="primary">Operator</span>;
-  }
-  if (role === 'assistant') {
-    return <span className="cockpit-badge" data-tone="success">{agentName}</span>;
-  }
-  if (role === 'event') {
-    return <span className="cockpit-badge" data-tone="warning">Event</span>;
-  }
-  return <span className="cockpit-badge">System</span>;
-}
-
-function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, agentName, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases, onOpenBeadId }: MessageBubbleProps) {
+function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases, onOpenBeadId }: MessageBubbleProps) {
   const isUser = msg.role === 'user';
   const isAssistant = msg.role === 'assistant';
   const isSystem = msg.role === 'system' || msg.role === 'event';
@@ -240,54 +213,54 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
     );
   }
 
-  return (
-    <div className={`group msg msg-${msg.role} relative max-w-full break-words ${isUser ? 'ml-auto w-fit max-w-full overflow-visible flex flex-col sm:max-w-[72ch]' : 'overflow-hidden'} ${bgClass(msg.role)} ${matchClass} ${pendingClass} ${failedClass}`}>
-      {/* Collapsible memories section for user messages */}
-      {isUser && memories && (
-        <MemoriesSection
-          memories={memories}
-          isCollapsed={isMemoryCollapsed}
-          onToggle={() => onToggleMemory(memoryCollapsedKey)}
-        />
-      )}
-      {/* Message header — click to collapse/expand */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={!isCollapsed}
-        className={`flex items-center py-1.5 gap-2 cursor-pointer select-none hover:bg-foreground/[0.02] transition-colors ${isUser ? 'px-3 sm:px-4 flex-row-reverse' : 'px-3 sm:px-4'}`}
-        onClick={() => onToggleCollapse(index)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
-      >
-        <span className={`text-muted-foreground text-xs shrink-0 w-3 transition-transform ${!isCollapsed ? 'rotate-90' : ''} ${isUser ? 'rotate-180' : ''} ${!isCollapsed && isUser ? '-rotate-90' : ''}`}>›</span>
-        <RoleBadge role={msg.role} agentName={agentName} />
-        {isCollapsed && preview && (
-          <span className="text-muted-foreground text-[0.667rem] opacity-60 overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">
-            {isSystem && msg.rawText && /```/.test(msg.rawText) && (
-              <span className="text-orange/70 mr-1" title="Contains code">{'</>'}</span>
-            )}
-            {preview}
-          </span>
+  if (isSystem) {
+    return (
+      <div className={`msg msg-system px-4 py-1.5 text-center ${matchClass}`}>
+        <button
+          type="button"
+          onClick={() => onToggleCollapse(index)}
+          aria-expanded={!isCollapsed}
+          className="mx-auto inline-flex max-w-full cursor-pointer select-none items-center gap-2 text-[0.7rem] text-muted-foreground/70 transition-colors hover:text-muted-foreground"
+        >
+          <span className="truncate">{preview || msg.systemLabel || 'System'}</span>
+          <span className="shrink-0 tabular-nums opacity-70">{timeStr}</span>
+        </button>
+        {!isCollapsed && displayContent && (
+          <div className="grok-bubble grok-bubble-assistant mx-auto mt-1.5 max-w-[68ch] text-left">
+            <div className="msg-body text-foreground">
+              <Suspense fallback={<span className="text-muted-foreground text-xs">Loading…</span>}>
+                <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
+              </Suspense>
+            </div>
+          </div>
         )}
-        <span className={`text-muted-foreground text-[0.667rem] shrink-0 tabular-nums ${isUser ? 'mr-auto' : 'ml-auto'}`}>
-          {timeStr}
-          {missionTime && <span className="ml-1.5 opacity-60">· {missionTime}</span>}
-        </span>
       </div>
-      {!isCollapsed && (
-        <div className={`relative pb-2 border-transparent ${isUser ? 'px-3 pr-5 mr-1.5 border-r-2 border-r-primary sm:px-4 sm:pr-10 sm:mr-4' : 'px-3 pl-7 ml-2 border-l-2 sm:px-4 sm:pl-10 sm:ml-4'} ${!isUser ? borderClass(msg.role) : ''}`}>
+    );
+  }
+
+  return (
+    <div className={`group msg msg-${msg.role} relative my-1.5 flex px-3 sm:px-6 ${isUser ? 'justify-end' : 'justify-start'} ${matchClass} ${pendingClass} ${failedClass}`}>
+      <div className={`flex min-w-0 max-w-full flex-col sm:max-w-[80%] ${isUser ? 'items-end' : 'items-start'}`}>
+        {isUser && memories && (
+          <MemoriesSection
+            memories={memories}
+            isCollapsed={isMemoryCollapsed}
+            onToggle={() => onToggleMemory(memoryCollapsedKey)}
+          />
+        )}
+        <div className={`grok-bubble relative min-w-0 max-w-full ${isUser ? 'grok-bubble-user' : 'grok-bubble-assistant'}`}>
           {msg.images && msg.images.length > 0 && !(isAssistant && msg.extractedImages && msg.extractedImages.length > 0) && (
-            <div className={`flex gap-2 flex-wrap mb-2 ${isUser ? 'justify-end' : ''}`}>
-              {msg.images.map((img, j) => 
+            <div className={`mb-2 flex flex-wrap gap-2 ${isUser ? 'justify-end' : ''}`}>
+              {msg.images.map((img, j) =>
                 isAssistant ? (
-                  <ImageLightbox key={j} src={img.preview} alt={img.name || 'image'} thumbnailClassName="max-w-[200px] max-h-[150px] rounded border border-border/60 object-contain cursor-pointer hover:border-primary/60 transition-colors" />
+                  <ImageLightbox key={j} src={img.preview} alt={img.name || 'image'} thumbnailClassName="max-w-[200px] max-h-[150px] rounded-xl border border-border/60 object-contain cursor-pointer hover:border-primary/60 transition-colors" />
                 ) : (
-                  <img key={j} src={img.preview} alt={img.name || 'image'} className="max-w-[200px] max-h-[150px] rounded border border-border/60 object-contain" />
+                  <img key={j} src={img.preview} alt={img.name || 'image'} className="max-w-[200px] max-h-[150px] rounded-xl border border-border/60 object-contain" />
                 )
               )}
             </div>
           )}
-          <div className={`msg-body text-foreground ${isUser ? 'block w-full min-w-0 max-w-full pr-1.5 text-left sm:pr-0' : ''} ${isAssistant ? (isStructuredMarkdown(msg.rawText) ? 'max-w-[1120px]' : 'max-w-[68ch]') : ''}`}>
+          <div className="msg-body text-foreground">
             {isVoiceMessage && (
               <span className="cockpit-badge mr-2 inline-flex align-middle" data-tone="primary">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
@@ -329,7 +302,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
             </div>
           )}
           {msg.extractedImages && msg.extractedImages.length > 0 && (
-            <div className="flex flex-col gap-2 mt-2">
+            <div className="mt-2 flex flex-col gap-2">
               {msg.extractedImages.map((img, idx) => (
                 <ImageLightbox
                   key={idx}
@@ -339,10 +312,8 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
               ))}
             </div>
           )}
-          {/* Action buttons — visible on hover */}
           {!msg.streaming && (
-            <div className="absolute top-0 right-3 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:right-4 sm:flex">
-              {/* Copy button */}
+            <div className="absolute -top-3 right-2 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
               <button
                 className="cockpit-toolbar-button min-h-7 px-2 text-[0.667rem]"
                 aria-label="Copy message to clipboard"
@@ -353,7 +324,11 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
             </div>
           )}
         </div>
-      )}
+        <span className="mt-0.5 select-none px-1 text-[0.625rem] tabular-nums text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100">
+          {timeStr}
+          {missionTime && <span className="ml-1 opacity-70">· {missionTime}</span>}
+        </span>
+      </div>
     </div>
   );
 }

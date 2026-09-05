@@ -147,7 +147,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [commandPaletteButtonVisible, setCommandPaletteButtonVisible] = useState(resolveInitialCommandPaletteButtonVisible);
   const [theme, setThemeState] = useState<ThemeName>(() => {
     const saved = localStorage.getItem('oc-theme') as ThemeName | null;
-    return saved && themeNames.includes(saved) ? saved : 'ayu-dark';
+    return saved && themeNames.includes(saved) ? saved : 'grok';
   });
   const [font, setFontState] = useState<FontName>(resolveInitialFont);
   const [fontSize, setFontSizeState] = useState<number>(() => {

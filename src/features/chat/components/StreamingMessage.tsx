@@ -8,22 +8,21 @@ interface StreamingMessageProps {
 }
 
 /**
- * Streaming message display with live content
+ * Streaming message display with live content — Grokbot-style assistant bubble.
  */
-export function StreamingMessage({ html, elapsedMs, agentName = 'Agent' }: StreamingMessageProps) {
+export function StreamingMessage({ html, elapsedMs }: StreamingMessageProps) {
   return (
-    <div className="msg msg-assistant streaming relative max-w-full break-words bg-message-assistant">
-      <div className="flex items-center gap-2 px-4 py-2">
-        <span className="cockpit-badge" data-tone="success">{agentName}</span>
-        {elapsedMs > 0 && (
-          <span className="ml-auto font-mono text-[0.667rem] tabular-nums text-muted-foreground">{formatElapsed(elapsedMs)}</span>
-        )}
-      </div>
-      <div className="ml-4 border-l-2 border-green/60 px-4 pb-3 pl-6">
+    <div className="msg msg-assistant streaming relative my-1.5 flex justify-start px-3 sm:px-6">
+      <div className="grok-bubble grok-bubble-assistant min-w-0 max-w-full sm:max-w-[80%]">
         <div
-          className="msg-body whitespace-pre-wrap text-foreground text-[0.867rem]"
+          className="msg-body whitespace-pre-wrap text-foreground"
           dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
         />
+        {elapsedMs > 0 && (
+          <div className="mt-1 text-right font-mono text-[0.625rem] tabular-nums text-muted-foreground/60">
+            {formatElapsed(elapsedMs)}
+          </div>
+        )}
       </div>
     </div>
   );

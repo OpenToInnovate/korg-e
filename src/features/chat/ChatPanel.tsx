@@ -260,6 +260,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         onReset={onReset}
         onAbort={onAbort}
         isGenerating={isGenerating}
+        agentName={agentName}
         onToggleFileBrowser={onToggleFileBrowser}
         isFileBrowserCollapsed={isFileBrowserCollapsed}
         onToggleMobileTopBar={onToggleMobileTopBar}
@@ -291,6 +292,16 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         {hasMore && (
           <div ref={sentinelRef} className="flex items-center justify-center py-2 text-muted-foreground/60 text-[0.667rem] tracking-widest uppercase select-none">
             ↑ older messages
+          </div>
+        )}
+        {messages.length === 0 && !isGenerating && (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-6 select-none">
+            <div className="text-3xl md:text-4xl font-medium tracking-tight text-foreground">
+              What do you want to know?
+            </div>
+            <div className="mt-3 text-sm text-muted-foreground">
+              {agentName} · GLM-5.2 · just type below
+            </div>
           </div>
         )}
         {messages.map((msg, i) => {

@@ -148,33 +148,27 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
 
   return (
     <div className={compact ? 'flex flex-col max-h-[65vh]' : 'h-full flex flex-col min-h-0'}>
-      <div className="panel-header border-l-[3px] border-l-info">
-        <span className="panel-label text-info">
-          <span className="panel-diamond">◆</span>
-          AGENTS
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          {onSpawn && (
-            <button
-              type="button"
-              onClick={() => setSpawnOpen(true)}
-              aria-label="Create session"
-              title="Create session"
-              className="shell-icon-button size-10 px-0"
-            >
-              <Plus size={16} />
-            </button>
-          )}
+      <div className="flex items-center justify-end gap-1 px-2 pb-1 pt-2">
+        {onSpawn && (
           <button
             type="button"
-            onClick={onRefresh}
-            aria-label="Refresh sessions"
-            title="Refresh sessions"
-            className="shell-icon-button size-10 px-0"
+            onClick={() => setSpawnOpen(true)}
+            aria-label="Create session"
+            title="Create session"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
-            <RefreshCw size={16} aria-hidden="true" className={isLoading ? 'animate-spin' : undefined} />
+            <Plus size={16} />
           </button>
-        </div>
+        )}
+        <button
+          type="button"
+          onClick={onRefresh}
+          aria-label="Refresh sessions"
+          title="Refresh sessions"
+          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <RefreshCw size={16} aria-hidden="true" className={isLoading ? 'animate-spin' : undefined} />
+        </button>
       </div>
       <div className={compact ? 'overflow-y-auto' : 'flex-1 overflow-y-auto'}>
         {isLoading && flatNodes.length === 0 ? (
