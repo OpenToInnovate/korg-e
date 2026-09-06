@@ -248,7 +248,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
       {/* Bottom identity card (Grokbot-style) */}
       <div className="border-t border-border/50 px-3 py-2.5">
         <div className="flex items-center gap-2.5">
-          <BoringAvatar name="operator" size={26} variant="beam" colors={['#7C5CFF', '#3B82F6', '#F59E0B', '#EF4444']} />
+          <BoringAvatar name="operator" size={26} variant="beam" colors={['#C0C6CC', '#EE1515', '#1E4FD8', '#D97B29']} />
           <div className="flex min-w-0 flex-col leading-tight">
             <span className="truncate text-[0.8125rem] font-semibold text-foreground">Operator</span>
             <span className="truncate text-[0.6875rem] text-muted-foreground">OpenClaw · {agentName}</span>

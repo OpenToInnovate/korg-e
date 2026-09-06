@@ -8,7 +8,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import NerveLogo from '../../components/NerveLogo';
+import CleatusLogo from '../../components/CleatusLogo';
 
 interface LoginPageProps {
   onLogin: (password: string) => Promise<void>;
@@ -42,7 +42,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
         <div className="grid lg:grid-cols-[1.15fr_0.85fr]">
           <div className="border-b border-border/70 bg-gradient-to-br from-background via-card/90 to-secondary/90 px-6 py-8 sm:px-8 lg:border-b-0 lg:border-r">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-background/60">
-              <NerveLogo size={30} />
+              <CleatusLogo size={30} />
             </div>
             <div className="mt-6 text-[0.667rem] font-medium uppercase tracking-[0.32em] text-primary/80">
               Private Cockpit Access
@@ -51,7 +51,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
               Sign in to your agent control surface
             </h1>
             <p className="mt-4 max-w-[48ch] text-sm leading-6 text-muted-foreground sm:text-base">
-              Nerve is the high visibility workspace for OpenClaw agents. Authenticate once, then manage chats, tasks, files, memory, and telemetry from one place.
+              Cleatus Bot is the high visibility workspace for OpenClaw agents. Authenticate once, then manage chats, tasks, files, memory, and telemetry from one place.
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
@@ -75,7 +75,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
               Authentication Required
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-foreground">
-              Unlock Nerve
+              Unlock Cleatus Bot
             </h2>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               Enter the password configured for this deployment. Your gateway token also works if password auth is using the fallback path.
@@ -110,7 +110,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
                 size="lg"
                 className="w-full text-[0.733rem] uppercase tracking-[0.22em]"
               >
-                {submitting ? 'Signing In…' : 'Enter Nerve'}
+                {submitting ? 'Signing In…' : 'Enter Cleatus Bot'}
               </Button>
             </form>
 

@@ -413,6 +413,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         {/* Processing indicator — visible while generating, persists during streaming */}
         {isGenerating && !stream.html && (
           <ProcessingIndicator
+            agentName={agentName}
             stage={processingStage}
             elapsedMs={processingTime}
             lastEventTimestamp={lastEventTimestamp}

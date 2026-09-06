@@ -1,36 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#0d1117"/>
-  <!-- Dim structure -->
-  <line x1="16" y1="16" x2="16" y2="10.4" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="20.8" y2="13.2" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="20.8" y2="18.8" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="16" y2="21.6" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="11.2" y2="18.8" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <line x1="16" y1="16" x2="11.2" y2="13.2" stroke="#301C0E" stroke-width="1" stroke-linecap="round"/>
-  <polygon points="16,10.4 20.8,13.2 20.8,18.8 16,21.6 11.2,18.8 11.2,13.2" fill="none" stroke="#301C0E" stroke-width="0.8" stroke-linejoin="round"/>
-  <!-- Glow spokes -->
-  <line x1="16" y1="16" x2="16" y2="10.4" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="20.8" y2="13.2" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="20.8" y2="18.8" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="16" y2="21.6" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="11.2" y2="18.8" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <line x1="16" y1="16" x2="11.2" y2="13.2" stroke="#FF8C32" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
-  <!-- Glow ring -->
-  <polygon points="16,10.4 20.8,13.2 20.8,18.8 16,21.6 11.2,18.8 11.2,13.2" fill="none" stroke="#FF8C32" stroke-width="0.8" stroke-linejoin="round" opacity="0.4"/>
-  <!-- Center node -->
-  <circle cx="16" cy="16" r="3" fill="#FF8C32" opacity="0.85"/>
-  <circle cx="16" cy="16" r="1.5" fill="#FFDCB4" opacity="0.9"/>
-  <!-- Outer nodes — all lit -->
-  <circle cx="16" cy="10.4" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="16" cy="10.4" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="20.8" cy="13.2" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="20.8" cy="13.2" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="20.8" cy="18.8" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="20.8" cy="18.8" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="16" cy="21.6" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="16" cy="21.6" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="11.2" cy="18.8" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="11.2" cy="18.8" r="0.9" fill="#FFDCB4" opacity="0.7"/>
-  <circle cx="11.2" cy="13.2" r="1.8" fill="#FF8C32" opacity="0.8"/>
-  <circle cx="11.2" cy="13.2" r="0.9" fill="#FFDCB4" opacity="0.7"/>
+  <rect width="32" height="32" rx="7" fill="#0b0d10"/>
+  <!-- antenna -->
+  <line x1="16" y1="7.2" x2="16" y2="4.6" stroke="#464e57" stroke-width="1.4" stroke-linecap="round"/>
+  <circle cx="16" cy="3.8" r="1.7" fill="#ee1515"/>
+  <!-- ears -->
+  <rect x="5.4" y="14.2" width="2.4" height="6.4" rx="1" fill="#78848f"/>
+  <rect x="24.2" y="14.2" width="2.4" height="6.4" rx="1" fill="#78848f"/>
+  <!-- head -->
+  <rect x="7.4" y="7.8" width="17.2" height="17" rx="4.5" fill="url(#metal)" stroke="#78848f" stroke-opacity="0.55"/>
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a525c"/>
+      <stop offset="1" stop-color="#262b31"/>
+    </linearGradient>
+  </defs>
+  <!-- visor -->
+  <rect x="9.4" y="11.4" width="13.2" height="6.4" rx="3.2" fill="#0a0e13"/>
+  <!-- glowing eyes -->
+  <rect x="12.4" y="13.4" width="2.6" height="2.4" rx="1.3" fill="#5bd1ff"/>
+  <rect x="17" y="13.4" width="2.6" height="2.4" rx="1.3" fill="#5bd1ff"/>
+  <!-- mouth grille -->
+  <g stroke="#464e57" stroke-width="1" stroke-linecap="round">
+    <line x1="13.4" y1="21" x2="14.2" y2="21"/>
+    <line x1="15.6" y1="21" x2="16.4" y2="21"/>
+    <line x1="17.8" y1="21" x2="18.6" y2="21"/>
+  </g>
 </svg>

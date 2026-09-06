@@ -7,7 +7,7 @@ import { PROGRESS_BAR_TRANSITION } from '@/lib/progress-colors';
 import { getStatusBadgeText, getStatusBadgeClasses } from './statusUtils';
 import { ChevronRight, ChevronDown, EllipsisVertical, PenLine, Timer, CornerDownRight } from 'lucide-react';
 import { SessionInfoPanel } from './SessionInfoPanel';
-import BoringAvatar from 'boring-avatars';
+import CleatusBotAvatar from '@/components/CleatusBotAvatar';
 
 // Pre-defined color configs to avoid object creation during render
 const COLORS_CRITICAL = {
@@ -29,13 +29,12 @@ const COLORS_NORMAL = {
 } as const;
 
 // Grokbot/OpenBot-style avatars: stable generated identity per session
-function SessionAvatar({ sessionKey, label }: { sessionKey: string; label: string }) {
+function SessionAvatar({ sessionKey, label, running }: { sessionKey: string; label: string; running: boolean }) {
   return (
-    <BoringAvatar
+    <CleatusBotAvatar
       name={sessionKey || label}
       size={30}
-      variant="beam"
-      colors={['#7C5CFF', '#3B82F6', '#F59E0B', '#EF4444']}
+      state={running ? 'working' : 'idle'}
       className="shrink-0 rounded-[10px]"
     />
   );
@@ -257,7 +256,7 @@ export const SessionNode = memo(function SessionNode({
           </span>
         )}
 
-        <SessionAvatar sessionKey={sessionKey} label={label} />
+        <SessionAvatar sessionKey={sessionKey} label={label} running={running} />
 
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           {/* Label (or rename input) + time */}

@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import BoringAvatar from 'boring-avatars';
+import CleatusBotAvatar from '@/components/CleatusBotAvatar';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useModelEffort } from './useModelEffort';
 
@@ -88,11 +88,10 @@ export function ChatHeader({
         </button>
       )}
       <div className="flex min-w-0 shrink-0 items-center gap-2.5">
-        <BoringAvatar
+        <CleatusBotAvatar
           name={agentName}
           size={28}
-          variant="beam"
-          colors={['#F59E0B', '#EF4444', '#7C5CFF']}
+          state={isGenerating ? 'working' : 'idle'}
           className="shrink-0 rounded-[9px]"
         />
         <span className="truncate text-[0.9375rem] font-semibold text-foreground">{agentName}</span>

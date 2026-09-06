@@ -4,6 +4,7 @@ import { HeartbeatPulse } from './HeartbeatPulse';
 import { ThinkingDots } from './ThinkingDots';
 import { ActivityLog } from './ActivityLog';
 import { formatElapsed } from '../utils';
+import CleatusBotAvatar from '@/components/CleatusBotAvatar';
 
 interface ProcessingIndicatorProps {
   stage?: ProcessingStage;
@@ -13,6 +14,7 @@ interface ProcessingIndicatorProps {
   activityLog: ActivityLogEntry[];
   isRecovering?: boolean;
   recoveryReason?: string | null;
+  agentName?: string;
 }
 
 /**
@@ -33,6 +35,7 @@ export function ProcessingIndicator({
   activityLog,
   isRecovering = false,
   recoveryReason = null,
+  agentName = 'Agent',
 }: ProcessingIndicatorProps) {
   // Local timer for stale detection (1s resolution)
   // Lazy initializer avoids impure Date.now() call during render
@@ -57,6 +60,7 @@ export function ProcessingIndicator({
       {/* Row 1: heartbeat + stage label + elapsed + dots */}
       <div className="flex items-center gap-3">
         <span className="flex items-center gap-2 text-[0.8rem] font-semibold text-foreground">
+          <CleatusBotAvatar name={agentName} size={22} state="working" />
           <HeartbeatPulse lastEventTimestamp={lastEventTimestamp} stage={stage} />
           <span className={`text-[0.667rem] ${stage === 'tool_use' ? 'text-green' : 'text-primary'}`}>◆</span>
           {stage === 'thinking' && (
