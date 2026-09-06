@@ -53,7 +53,7 @@ interface SettingsContextValue {
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
-const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20260312';
+const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20260906';
 const KANBAN_VISIBILITY_STORAGE_KEY = 'nerve:workspace:kanban-visible';
 const COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showChatboxCommandPaletteButton';
 const LEGACY_TOPBAR_COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showTopBarCommandPaletteButton';
@@ -88,17 +88,17 @@ function resolveInitialFont(): FontName {
   const hasRefreshedFont = localStorage.getItem(FONT_REFRESH_STORAGE_KEY) === 'true';
 
   if (!hasRefreshedFont) {
-    const shouldAdoptInstrumentSans =
+    const shouldAdoptInter =
       saved === null ||
-      saved === 'inter' ||
+      saved === 'instrument-sans' ||
       saved === 'system' ||
       saved === 'jetbrains-mono';
 
     localStorage.setItem(FONT_REFRESH_STORAGE_KEY, 'true');
 
-    if (shouldAdoptInstrumentSans) {
-      localStorage.setItem('oc-font', 'instrument-sans');
-      return 'instrument-sans';
+    if (shouldAdoptInter) {
+      localStorage.setItem('oc-font', 'inter');
+      return 'inter';
     }
 
     if (saved && fontNames.includes(saved as FontName)) {
@@ -106,7 +106,7 @@ function resolveInitialFont(): FontName {
     }
   }
 
-  return saved && fontNames.includes(saved as FontName) ? saved as FontName : 'instrument-sans';
+  return saved && fontNames.includes(saved as FontName) ? saved as FontName : 'inter';
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {

@@ -74,10 +74,10 @@ export function ProcessingIndicator({
         <ThinkingDots stage={stage} />
       </div>
 
-      {/* Row 2: description line (indented to align past diamond) */}
+      {/* Row 2: description line (indented to align past diamond, OpenBot shimmer while running) */}
       {descriptionText && (
         <div
-          className="break-all text-[0.733rem] text-muted-foreground"
+          className="tool-line-running break-all text-[0.733rem] text-muted-foreground"
           style={{ paddingLeft: '2rem' }}
         >
           {descriptionText}

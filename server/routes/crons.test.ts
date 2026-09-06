@@ -21,6 +21,32 @@ describe('cron routes', () => {
       invokeGatewayTool,
     }));
 
+    // Cron routes talk to the gateway over the WebSocket RPC channel
+    // (cron.list/add/update/remove/run/runs). Adapt those calls back to
+    // the legacy invokeGatewayTool('cron', { action, ... }) shape so the
+    // assertions below keep working against a single mock.
+    const gatewayRpcCall = vi.fn(
+      async (method: string, params: Record<string, unknown>, timeoutMs?: number) => {
+        const action = method.replace(/^cron\./, '');
+        const call = (tool: string, args: Record<string, unknown>) =>
+          timeoutMs === undefined
+            ? invokeGatewayTool(tool, args)
+            : invokeGatewayTool(tool, args, timeoutMs);
+        if (action === 'add') {
+          return call('cron', { action, job: params });
+        }
+        if (action === 'update' || action === 'remove' || action === 'run') {
+          const { id, ...rest } = params;
+          return call('cron', { action, jobId: id, ...rest });
+        }
+        return call('cron', { action, ...params });
+      },
+    );
+
+    vi.doMock('../lib/gateway-rpc.js', () => ({
+      gatewayRpcCall,
+    }));
+
     vi.doMock('../lib/config.js', async (importOriginal) => {
       const actual = await importOriginal<typeof import('../lib/config.js')>();
       return {

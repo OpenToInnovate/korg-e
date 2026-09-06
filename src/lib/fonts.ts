@@ -1,6 +1,6 @@
 // Font definitions for Nerve UI
 
-export type FontName = 'instrument-sans' | 'space-grotesk' | 'jetbrains-mono';
+export type FontName = 'inter' | 'instrument-sans' | 'space-grotesk' | 'jetbrains-mono';
 
 export interface Font {
   name: FontName;
@@ -10,6 +10,11 @@ export interface Font {
 }
 
 export const fonts: Record<FontName, Font> = {
+  'inter': {
+    name: 'inter',
+    label: 'Inter',
+    family: "'Inter Variable', 'Inter', 'Helvetica Neue', Arial, sans-serif",
+  },
   'instrument-sans': {
     name: 'instrument-sans',
     label: 'Instrument Sans',

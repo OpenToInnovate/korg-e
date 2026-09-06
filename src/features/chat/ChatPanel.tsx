@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import type { ProcessingStage, ActivityLogEntry, ChatStreamState } from '@/contexts/ChatContext';
 import { ToolCallBlock } from './ToolCallBlock';
 import { MessageBubble } from './MessageBubble';
@@ -253,6 +253,31 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   // First message time for mission time calculation
   const firstMessageTime = messages.length > 0 ? messages[0].timestamp : null;
 
+  // Grokbot-style day separators — label shown when the calendar day changes
+  const formatDayLabel = useCallback((d: Date): string => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const sameDay = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    if (sameDay(d, today)) return 'Today';
+    if (sameDay(d, yesterday)) return 'Yesterday';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }, []);
+
+  const daySeparators = useMemo(() => {
+    const map = new Map<number, string>();
+    let lastDay = '';
+    messages.forEach((m, i) => {
+      const key = `${m.timestamp.getFullYear()}-${m.timestamp.getMonth()}-${m.timestamp.getDate()}`;
+      if (key !== lastDay) {
+        map.set(i, formatDayLabel(m.timestamp));
+        lastDay = key;
+      }
+    });
+    return map;
+  }, [messages, formatDayLabel]);
+
   return (
     <div id={id} className="h-full flex flex-col border-r border-border min-w-0 relative">
       {/* COMMS Header */}
@@ -305,6 +330,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
           </div>
         )}
         {messages.map((msg, i) => {
+          const dayLabel = daySeparators.get(i);
           const isTool = msg.role === 'tool' || msg.role === 'toolResult';
           const collapseKey = msg.msgId || msg.tempId || i;
           const isCollapsed = collapsed[collapseKey] ?? (msg.isThinking || isMessageCollapsible(msg));
@@ -313,61 +339,73 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
           const isCurrentMatch = search.currentMatch?.messageIndex === i;
           const stableKey = msg.msgId || msg.tempId || `${msg.role}-${msg.timestamp.getTime()}-${i}`;
 
+          const separator = dayLabel ? (
+            <div key={`${stableKey}-day`} className="py-3 text-center text-[0.7rem] text-muted-foreground/70 select-none">
+              {dayLabel}
+            </div>
+          ) : null;
+
           if (isTool) {
             // Grouped tool bubble (multiple consecutive tool calls)
             if (msg.toolGroup) {
               return (
+                <div key={stableKey}>
+                  {separator}
+                  <div
+                    ref={(el) => { if (el) messageRefs.current.set(i, el); }}
+                  >
+                    <ToolGroupBlock
+                      msg={msg}
+                      index={i}
+                      isCollapsed={isCollapsed}
+                      onToggleCollapse={toggleCollapse}
+                    />
+                  </div>
+                </div>
+              );
+            }
+            // Single tool call
+            return (
+              <div key={stableKey}>
+                {separator}
                 <div
-                  key={stableKey}
                   ref={(el) => { if (el) messageRefs.current.set(i, el); }}
                 >
-                  <ToolGroupBlock
+                  <ToolCallBlock
                     msg={msg}
                     index={i}
                     isCollapsed={isCollapsed}
                     onToggleCollapse={toggleCollapse}
                   />
                 </div>
-              );
-            }
-            // Single tool call
-            return (
-              <div
-                key={stableKey}
-                ref={(el) => { if (el) messageRefs.current.set(i, el); }}
-              >
-                <ToolCallBlock
-                  msg={msg}
-                  index={i}
-                  isCollapsed={isCollapsed}
-                  onToggleCollapse={toggleCollapse}
-                />
               </div>
             );
           }
 
           return (
-            <div
-              key={stableKey}
-              ref={(el) => { if (el) messageRefs.current.set(i, el); }}
-            >
-              <MessageBubble
-                msg={msg}
-                index={i}
-                isCollapsed={isCollapsed}
-                isMemoryCollapsed={isMemoryCollapsed}
-                memoryKey={memoryKey}
-                onToggleCollapse={toggleCollapse}
-                onToggleMemory={toggleMemory}
-                firstMessageTime={firstMessageTime}
-                searchQuery={search.query}
-                isCurrentMatch={isCurrentMatch}
-                agentName={agentName}
-                onOpenWorkspacePath={onOpenWorkspacePath}
-                pathLinkPrefixes={pathLinkPrefixes}
-                pathLinkAliases={pathLinkAliases}
-                onOpenBeadId={onOpenBeadId}
-              />
+            <div key={stableKey}>
+              {separator}
+              <div
+                ref={(el) => { if (el) messageRefs.current.set(i, el); }}
+              >
+                <MessageBubble
+                  msg={msg}
+                  index={i}
+                  isCollapsed={isCollapsed}
+                  isMemoryCollapsed={isMemoryCollapsed}
+                  memoryKey={memoryKey}
+                  onToggleCollapse={toggleCollapse}
+                  onToggleMemory={toggleMemory}
+                  firstMessageTime={firstMessageTime}
+                  searchQuery={search.query}
+                  isCurrentMatch={isCurrentMatch}
+                  agentName={agentName}
+                  onOpenWorkspacePath={onOpenWorkspacePath}
+                  pathLinkPrefixes={pathLinkPrefixes}
+                  pathLinkAliases={pathLinkAliases}
+                  onOpenBeadId={onOpenBeadId}
+                />
+              </div>
             </div>
           );
         })}
@@ -388,7 +426,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         {/* Streaming message with condensed activity log */}
         {isGenerating && stream.html && (
           <>
-            <StreamingMessage html={stream.html} elapsedMs={processingTime} agentName={agentName} />
+            <StreamingMessage html={stream.html} text={stream.text} elapsedMs={processingTime} agentName={agentName} />
             {activityLog.length > 0 && (
               <div className="px-4 pb-2" style={{ paddingLeft: '2rem' }}>
                 <ActivityLog entries={activityLog} />

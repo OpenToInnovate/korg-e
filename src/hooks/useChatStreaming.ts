@@ -65,6 +65,7 @@ export function useChatStreaming() {
     setStream(prev => ({
       ...prev,
       html,
+      text: flush.text,
       runId: flush.runId || undefined,
     }));
   }, [clearScheduledStreamFlush]);

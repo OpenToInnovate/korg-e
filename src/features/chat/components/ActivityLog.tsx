@@ -30,7 +30,7 @@ export function ActivityLog({ entries, maxVisible = 4 }: ActivityLogProps) {
             style={{ animation: 'activity-fade-in 0.2s ease-out' }}
           >
             <span className="text-border select-none">{connector}</span>
-            <span className="break-all">{entry.description}</span>
+            <span className={`break-all ${entry.phase === 'running' ? 'tool-line-running' : ''}`}>{entry.description}</span>
             {entry.phase === 'completed' && (
               <span className="text-green text-[0.667rem] shrink-0">✓</span>
             )}

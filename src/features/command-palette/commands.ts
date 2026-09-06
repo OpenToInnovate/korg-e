@@ -45,6 +45,7 @@ const THEME_LABELS: Record<ThemeName, string> = {
 };
 
 const FONT_LABELS: Record<FontName, string> = {
+  'inter': 'Inter',
   'instrument-sans': 'Instrument Sans',
   'space-grotesk': 'Space Grotesk',
   'jetbrains-mono': 'JetBrains Mono',

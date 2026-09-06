@@ -6,6 +6,7 @@ import { SessionSkeletonGroup } from '@/components/skeletons';
 import { buildAgentSidebarTree, buildSessionTree, flattenTree, getSessionType } from './sessionTree';
 import { getSessionDisplayLabel, isTopLevelAgentSessionKey } from './sessionKeys';
 import { SessionNode } from './SessionNode';
+import BoringAvatar from 'boring-avatars';
 import type { GranularAgentState } from '@/types';
 import {
   Dialog,
@@ -16,7 +17,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Plus, RefreshCw, Search } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 
 interface SessionListProps {
@@ -135,6 +136,12 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
   // Build tree and flatten for rendering
   const tree = useMemo(() => buildAgentSidebarTree(sessions), [sessions]);
   const flatNodes = useMemo(() => flattenTree(tree, expandedState), [tree, expandedState]);
+  const [sessionSearch, setSessionSearch] = useState('');
+  const visibleNodes = useMemo(() => {
+    const q = sessionSearch.trim().toLowerCase();
+    if (!q) return flatNodes;
+    return flatNodes.filter((n) => getSessionDisplayLabel(n.session, agentName).toLowerCase().includes(q));
+  }, [flatNodes, sessionSearch, agentName]);
 
   const handleSetDeleteTarget = useCallback((key: string, label: string) => {
     const targetNode = findNodeByKey(tree, key);
@@ -170,12 +177,25 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
           <RefreshCw size={16} aria-hidden="true" className={isLoading ? 'animate-spin' : undefined} />
         </button>
       </div>
+      <div className="px-2.5 pb-1.5">
+        <div className="flex items-center gap-2 rounded-xl bg-secondary/70 px-2.5 py-1.5">
+          <Search size={13} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+          <input
+            type="text"
+            value={sessionSearch}
+            onChange={(e) => setSessionSearch(e.target.value)}
+            placeholder="Search"
+            aria-label="Search sessions"
+            className="w-full border-0 bg-transparent text-[0.8125rem] text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+      </div>
       <div className={compact ? 'overflow-y-auto' : 'flex-1 overflow-y-auto'}>
-        {isLoading && flatNodes.length === 0 ? (
+        {isLoading && visibleNodes.length === 0 ? (
           <SessionSkeletonGroup count={4} />
-        ) : flatNodes.length === 0 ? (
+        ) : visibleNodes.length === 0 ? (
           <div className="text-muted-foreground px-3 py-2 text-[0.733rem]">No active sessions</div>
-        ) : flatNodes.map((node) => {
+        ) : visibleNodes.map((node) => {
           const sessionKey = node.key;
           const sessionType = getSessionType(sessionKey);
           const isSubagent = sessionType === 'subagent';
@@ -223,6 +243,17 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
             />
           );
         })}
+      </div>
+
+      {/* Bottom identity card (Grokbot-style) */}
+      <div className="border-t border-border/50 px-3 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <BoringAvatar name="operator" size={26} variant="beam" colors={['#7C5CFF', '#3B82F6', '#F59E0B', '#EF4444']} />
+          <div className="flex min-w-0 flex-col leading-tight">
+            <span className="truncate text-[0.8125rem] font-semibold text-foreground">Operator</span>
+            <span className="truncate text-[0.6875rem] text-muted-foreground">OpenClaw · {agentName}</span>
+          </div>
+        </div>
       </div>
 
       {/* Delete confirmation dialog */}

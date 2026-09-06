@@ -7,8 +7,16 @@
 /* Static (non-themeable) tokens */
 @theme {
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-  --font-sans: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
   --font-size-base: 15px;
+  /* OpenBot radius scale: everything derives from one 0.55rem base */
+  --radius-sm: calc(0.55rem * 0.6);
+  --radius-md: calc(0.55rem * 0.8);
+  --radius-lg: 0.55rem;
+  --radius-xl: calc(0.55rem * 1.4);
+  --radius-2xl: calc(0.55rem * 1.8);
+  --radius-3xl: calc(0.55rem * 2.2);
+  --radius-4xl: calc(0.55rem * 2.6);
 }
 
 @layer base {
@@ -20,10 +28,20 @@
   }
   * {
     @apply border-border/60 outline-ring/50;
-    scrollbar-width: auto;
-    scrollbar-color:
-      color-mix(in srgb, var(--color-primary) 48%, var(--color-scrollbar-hover))
-      color-mix(in srgb, var(--color-secondary) 52%, var(--color-background));
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+  /* OpenBot-style thin overlay scrollbars */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 5px;
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
@@ -31,11 +49,6 @@
     font-size: var(--font-size-base);
     line-height: 1.55;
     font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
-    background-image:
-      radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--color-primary) 14%, transparent) 0%, transparent 30%),
-      radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--color-info) 7%, transparent) 0%, transparent 28%),
-      linear-gradient(180deg, color-mix(in srgb, var(--color-secondary) 20%, transparent), transparent 30%);
-    background-attachment: fixed;
   }
   body,
   button,
@@ -792,25 +805,25 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 48px;
-  padding: 10px 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-secondary) 92%, transparent), color-mix(in srgb, var(--color-card) 90%, transparent));
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+  min-height: 44px;
+  padding: 8px 12px;
+  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
   flex-shrink: 0;
 }
 .panel-header .panel-label {
-  font-family: var(--font-mono);
-  font-size: 0.667rem;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
   display: flex;
   align-items: center;
   gap: 6px;
+  color: var(--color-foreground);
 }
 .panel-header .panel-diamond {
-  font-size: 0.733rem;
+  display: none;
 }
 
 /* Intermediate assistant messages — reduced visual weight */
@@ -1513,4 +1526,44 @@ div[role="log"] {
 }
 .grok-composer textarea {
   font-family: var(--font-sans);
+}
+
+/* ─── OpenBot ports ─────────────────────────────────────────────────── */
+/* Streamdown: inherit Nerve bubble typography + theme-aware code blocks */
+.streamdown-body,
+.grok-bubble .streamdown-body {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+/* A tool line that is still running (OpenBot's shimmer, ported). */
+.tool-line-running {
+  background-image: linear-gradient(
+    100deg,
+    currentColor 40%,
+    color-mix(in oklab, currentColor 25%, transparent) 50%,
+    currentColor 60%
+  );
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: tool-line-sweep 1.6s linear infinite;
+}
+
+@keyframes tool-line-sweep {
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-line-running {
+    animation: none;
+    background-image: none;
+    color: inherit;
+    -webkit-text-fill-color: currentColor;
+  }
 }

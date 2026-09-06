@@ -49,7 +49,7 @@ describe('ChatHeader', () => {
       />
     );
 
-    expect(screen.getByText('Comms')).toBeInTheDocument();
+    expect(screen.getByText('Agent')).toBeInTheDocument();
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
     expect(screen.getByText('Balanced')).toBeInTheDocument();
   });

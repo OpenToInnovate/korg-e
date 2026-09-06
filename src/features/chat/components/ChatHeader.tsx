@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import BoringAvatar from 'boring-avatars';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useModelEffort } from './useModelEffort';
 
@@ -87,12 +88,13 @@ export function ChatHeader({
         </button>
       )}
       <div className="flex min-w-0 shrink-0 items-center gap-2.5">
-        <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-primary">
-          <span className="flex gap-[3px]">
-            <span className="h-1.5 w-1 rounded-full bg-primary-foreground/80" />
-            <span className="h-1.5 w-1 rounded-full bg-primary-foreground/80" />
-          </span>
-        </span>
+        <BoringAvatar
+          name={agentName}
+          size={28}
+          variant="beam"
+          colors={['#F59E0B', '#EF4444', '#7C5CFF']}
+          className="shrink-0 rounded-[9px]"
+        />
         <span className="truncate text-[0.9375rem] font-semibold text-foreground">{agentName}</span>
       </div>
 

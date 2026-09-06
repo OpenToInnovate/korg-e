@@ -70,6 +70,8 @@ export interface ActivityLogEntry {
 
 export interface ChatStreamState {
   html: string;
+  /** Raw markdown as streamed by the gateway (for Streamdown rendering). */
+  text?: string;
   runId?: string;
   isRecovering?: boolean;
   recoveryReason?: RecoveryReason | null;

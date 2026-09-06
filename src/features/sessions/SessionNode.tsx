@@ -7,6 +7,7 @@ import { PROGRESS_BAR_TRANSITION } from '@/lib/progress-colors';
 import { getStatusBadgeText, getStatusBadgeClasses } from './statusUtils';
 import { ChevronRight, ChevronDown, EllipsisVertical, PenLine, Timer, CornerDownRight } from 'lucide-react';
 import { SessionInfoPanel } from './SessionInfoPanel';
+import BoringAvatar from 'boring-avatars';
 
 // Pre-defined color configs to avoid object creation during render
 const COLORS_CRITICAL = {
@@ -27,28 +28,16 @@ const COLORS_NORMAL = {
   growGlow: 'rgba(76, 175, 80, 0.5)',
 } as const;
 
-// Grokbot-style avatar blobs: stable color per session, two "eyes"
-const AVATAR_COLORS = ['#7C5CFF', '#3B82F6', '#F59E0B', '#EF4444', '#10B981', '#EC4899', '#8B5CF6', '#14B8A6'] as const;
-
-function avatarColor(key: string): string {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
-
+// Grokbot/OpenBot-style avatars: stable generated identity per session
 function SessionAvatar({ sessionKey, label }: { sessionKey: string; label: string }) {
-  const color = avatarColor(sessionKey || label);
   return (
-    <span
-      aria-hidden="true"
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]"
-      style={{ backgroundColor: color }}
-    >
-      <span className="flex gap-1">
-        <span className="h-1.5 w-1 rounded-full bg-black/70" />
-        <span className="h-1.5 w-1 rounded-full bg-black/70" />
-      </span>
-    </span>
+    <BoringAvatar
+      name={sessionKey || label}
+      size={30}
+      variant="beam"
+      colors={['#7C5CFF', '#3B82F6', '#F59E0B', '#EF4444']}
+      className="shrink-0 rounded-[10px]"
+    />
   );
 }
 

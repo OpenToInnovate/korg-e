@@ -23,11 +23,10 @@ import { rateLimitGeneral } from '../middleware/rate-limit.js';
 // ("trusted operational run instance"), so cron routes go through the
 // persistent gateway WebSocket RPC (same channel the CLI uses) instead
 // of POST /tools/invoke. gateway-rpc carries the paired device identity.
-const GATEWAY_CRON_TIMEOUT_MS = 15_000;
 async function cronRpc(
   action: 'list' | 'add' | 'update' | 'remove' | 'run' | 'runs',
   args: Record<string, unknown>,
-  timeoutMs = GATEWAY_CRON_TIMEOUT_MS,
+  timeoutMs?: number,
 ): Promise<unknown> {
   const { action: _omit, jobId, job, ...rest } = args as {
     action?: string; jobId?: string; job?: Record<string, unknown>;
