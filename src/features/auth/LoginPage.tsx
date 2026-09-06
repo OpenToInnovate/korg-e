@@ -41,8 +41,8 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
       <div className="shell-panel relative w-full max-w-[min(92vw,980px)] overflow-hidden rounded-[28px]">
         <div className="grid lg:grid-cols-[1.15fr_0.85fr]">
           <div className="border-b border-border/70 bg-gradient-to-br from-background via-card/90 to-secondary/90 px-6 py-8 sm:px-8 lg:border-b-0 lg:border-r">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/20 bg-background/60">
-              <CleatusLogo size={30} />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/20 bg-background/60">
+              <CleatusLogo size={40} withFootball />
             </div>
             <div className="mt-6 text-[0.667rem] font-medium uppercase tracking-[0.32em] text-primary/80">
               Private Cockpit Access

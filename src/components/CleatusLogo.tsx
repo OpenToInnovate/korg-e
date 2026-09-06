@@ -19,6 +19,8 @@ function rgba(c: number[], a: number) {
 interface CleatusLogoProps {
   /** Logical size in CSS pixels (canvas is rendered at 2× for retina). @default 28 */
   size?: number;
+  /** Tuck a football under his arm — for large renderings like the login hero. */
+  withFootball?: boolean;
 }
 
 /**
@@ -26,9 +28,10 @@ interface CleatusLogoProps {
  *
  * A little gunmetal robot head in the Cleatus spirit: glowing electric-blue
  * eyes that blink on a loop, a pulsing red antenna bulb, and a gentle idle
- * bob. Cycle ≈ 4 s. Respects prefers-reduced-motion (single static frame).
+ * bob. With `withFootball`, he holds a leather football. Cycle ≈ 4 s.
+ * Respects prefers-reduced-motion (single static frame).
  */
-export default function CleatusLogo({ size = 28 }: CleatusLogoProps) {
+export default function CleatusLogo({ size = 28, withFootball = false }: CleatusLogoProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -150,6 +153,43 @@ export default function CleatusLogo({ size = 28 }: CleatusLogoProps) {
         ctx.moveTo(cx + dx * headW - 1.4 * S, my);
         ctx.lineTo(cx + dx * headW + 1.4 * S, my);
         ctx.stroke();
+      }
+
+      // ── Football, tucked under the right arm ───────────────────
+      if (withFootball) {
+        const fx = hx + headW + W * 0.015;
+        const fy = hy + headH * 0.78 + bob * 0.4;
+        const fw = W * 0.19;
+        const fh = W * 0.125;
+        ctx.save();
+        ctx.translate(fx, fy);
+        ctx.rotate(-0.42);
+        // leather body
+        const fg = ctx.createLinearGradient(0, -fh / 2, 0, fh / 2);
+        fg.addColorStop(0, '#a06a3f');
+        fg.addColorStop(1, '#7a4a28');
+        ctx.fillStyle = fg;
+        ctx.strokeStyle = 'rgba(58,34,16,0.9)';
+        ctx.lineWidth = 1.1 * S;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, fw / 2, fh / 2, 0, 0, TAU);
+        ctx.fill();
+        ctx.stroke();
+        // white seam + lace
+        ctx.strokeStyle = 'rgba(245,245,240,0.92)';
+        ctx.lineWidth = 0.9 * S;
+        ctx.beginPath();
+        ctx.moveTo(-fw * 0.32, 0);
+        ctx.lineTo(fw * 0.32, 0);
+        ctx.stroke();
+        ctx.lineWidth = 0.8 * S;
+        for (const lx of [-0.12, 0, 0.12]) {
+          ctx.beginPath();
+          ctx.moveTo(fw * lx, -fh * 0.16);
+          ctx.lineTo(fw * lx, fh * 0.16);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
     }
 

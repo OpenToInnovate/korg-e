@@ -223,12 +223,29 @@ export const SessionNode = memo(function SessionNode({
         isCronRun && !isActive && 'opacity-60'
       )}
     >
-      {/* Tree connector: subtle left border for children */}
+      {/* Tree connector: rounded elbow tether from the parent down to this row's avatar */}
       {depth > 0 && (
-        <div
-          className="absolute top-0 bottom-0 border-l border-border/30"
-          style={{ left: `${(depth - 1) * 14 + 10}px` }}
-        />
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute top-0 h-full"
+          style={{ left: `${(depth - 1) * 14 + 10}px`, width: '22px' }}
+          viewBox="0 0 22 100"
+          preserveAspectRatio="none"
+        >
+          {/* incoming vertical from the parent */}
+          <path d="M 1 0 V 46" stroke="currentColor" strokeWidth="1" className="text-border/60" fill="none" />
+          {/* stub continuing to the next sibling */}
+          <path d="M 1 58 V 100" stroke="currentColor" strokeWidth="1" className="text-border/30" fill="none" />
+          {/* elbow into this avatar */}
+          <path
+            d="M 1 46 V 52 Q 1 58 7 58 H 20"
+            stroke="currentColor"
+            strokeWidth="1"
+            strokeLinecap="round"
+            className="text-border"
+            fill="none"
+          />
+        </svg>
       )}
 
       <button
