@@ -24,7 +24,7 @@ import { invokeGatewayTool } from '../lib/gateway-client.js';
 import { rateLimitGeneral, rateLimitRestart } from '../middleware/rate-limit.js';
 import { resolveOpenclawBin } from '../lib/openclaw-bin.js';
 import { config } from '../lib/config.js';
-
+import { assertCoreMutationAllowed, CoreUpdateGuardError } from '../lib/core-update-guard.js';
 const app = new Hono();
 
 const GATEWAY_TIMEOUT_MS = 8_000;
@@ -414,6 +414,18 @@ app.post('/api/gateway/session-patch', rateLimitGeneral, async (c) => {
 const GATEWAY_RESTART_TIMEOUT_MS = 15_000;
 
 app.post('/api/gateway/restart', rateLimitRestart, async (c) => {
+  // Never bounce the service while a core update is activating — the update's
+  // own post-update verification owns the gateway in that window, and an
+  // external restart reproduces the post-core-update-failed outage.
+  try {
+    await assertCoreMutationAllowed();
+  } catch (err) {
+    if (err instanceof CoreUpdateGuardError) {
+      return c.json({ ok: false, error: err.message }, 409);
+    }
+    throw err;
+  }
+
   // DBus session vars are required for `systemctl --user` commands.
   // When Nerve runs as a system service these may be absent; provide fallbacks.
   const uid = process.getuid?.() ?? 1000;
