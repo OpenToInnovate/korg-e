@@ -7,6 +7,13 @@ import { RefreshCw, Play, Plus, Trash2, Pencil, ChevronDown, ChevronRight, Check
 import { useCrons, type CronJob, type CronRun, CRON_GATEWAY_TOOL_ALLOWLIST } from '../hooks/useCrons';
 import { CronDialog } from './CronDialog';
 import { useSessionContext } from '@/contexts/SessionContext';
+import { getRootAgentId } from '@/features/sessions/sessionKeys';
+import { AutoReviewRequiredError, type AutoReviewRuleRef } from '@/features/auto-review/errors';
+
+/** Max routines per bot (GrokBot parity). */
+const MAX_ROUTINES_PER_BOT = 50;
+/** Run records kept per routine in the UI (GrokBot parity). */
+const MAX_RUN_HISTORY = 20;
 
 type CronRowJob = CronJob;
 
@@ -82,7 +89,7 @@ function relativeUntil(ts: string): string {
 function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   job: CronRowJob;
   onToggle: (id: string, enabled: boolean) => void;
-  onRun: (id: string) => Promise<boolean | undefined>;
+  onRun: (id: string, approveRules?: string[]) => Promise<boolean | undefined>;
   onDelete: (id: string) => void;
   onEdit: (job: CronJob) => void;
   onFetchRuns: (id: string) => Promise<CronRun[]>;
@@ -90,6 +97,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   const [expanded, setExpanded] = useState(false);
   const [runs, setRuns] = useState<CronRun[]>([]);
   const [running, setRunning] = useState(false);
+  const [approvalGate, setApprovalGate] = useState<AutoReviewRuleRef[] | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -129,14 +137,17 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
     setExpanded(!expanded);
   }, [expanded, job.id, onFetchRuns]);
 
-  const handleRun = useCallback(async () => {
+  const handleRun = useCallback(async (approveRules?: string[]) => {
     setRunning(true);
     try {
-      const ok = await onRun(job.id);
+      const ok = await onRun(job.id, approveRules);
+      if (ok) setApprovalGate(null);
       if (ok && expanded) {
         const r = await onFetchRuns(job.id);
         setRuns(r);
       }
+    } catch (err) {
+      if (err instanceof AutoReviewRequiredError) setApprovalGate(err.rules);
     } finally {
       setRunning(false);
     }
@@ -176,9 +187,9 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
               <div className="min-w-0 flex items-start gap-2">
               <button
                 onClick={() => onToggle(job.id, !job.enabled)}
-                className="shell-chip min-h-8 shrink-0 rounded-lg px-2.5 text-[0.667rem]"
+                className="shell-chip min-h-8 shrink-0 rounded-lg px-2.5 text-2xs"
                 data-active={job.enabled ? 'true' : 'false'}
-                title={job.enabled ? 'Pause job' : 'Enable job'}
+                title={job.enabled ? 'Active — tap to pause' : 'Paused — tap to resume'}
                 aria-label={`${job.enabled ? 'Pause' : 'Enable'} ${name}`}
               >
                 <Circle
@@ -186,16 +197,16 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                   fill={job.enabled ? 'currentColor' : 'none'}
                   className={job.enabled ? 'text-green' : 'text-muted-foreground'}
                 />
-                <span>{job.enabled ? 'Live' : 'Off'}</span>
+                <span>{job.enabled ? 'Active' : 'Paused'}</span>
               </button>
                 <div className="min-w-0 space-y-0.5">
-                  <div className="text-[0.833rem] font-semibold leading-tight text-foreground break-words">{name}</div>
-                  <div className="text-[0.7rem] leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>
+                  <div className="text-sm font-semibold leading-tight text-foreground break-words">{name}</div>
+                  <div className="text-2xs leading-4.5 text-muted-foreground">{humanSchedule(job)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-1 self-start">
                 <button
-                  onClick={handleRun}
+                  onClick={() => void handleRun()}
                   disabled={running}
                   className="shell-icon-button size-9 px-0 disabled:cursor-wait disabled:opacity-60"
                   data-active={running ? 'true' : 'false'}
@@ -229,7 +240,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                           setActionsOpen(false);
                           onEdit(job);
                         }}
-                        className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[0.7rem] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+                        className="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-2xs font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
                         aria-label={`Edit ${name}`}
                       >
                         <Pencil size={12} />
@@ -237,7 +248,7 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
                       </button>
                       <button
                         onClick={handleDeleteClick}
-                        className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[0.7rem] font-medium transition-colors ${
+                        className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-2xs font-medium transition-colors ${
                           confirmingDelete
                             ? 'text-red hover:bg-red/10 hover:text-red'
                             : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-red'
@@ -254,69 +265,100 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone={targetTone}>
+              <span className="cockpit-badge min-h-6 px-2 text-2xs" data-tone={targetTone}>
                 {executionLabel}
               </span>
-              <span className="min-w-0 truncate text-right text-[0.667rem] text-muted-foreground">
+              <span className="min-w-0 truncate text-right text-2xs text-muted-foreground">
                 {job.lastRun ? `Last ${relativeTime(job.lastRun)}` : 'No runs yet'}
               </span>
             </div>
 
             <div aria-live="polite" aria-atomic="true" className="space-y-1">
               {running && (
-                <div className="text-[0.7rem] text-primary flex items-center gap-1.5">
+                <div className="text-2xs text-primary flex items-center gap-1.5">
                   <Loader2 size={10} className="animate-spin" />
                   <span>Running now.</span>
                 </div>
               )}
               {job.lastError && !taskSucceeded && !running && (
-                <div className="text-[0.7rem] text-red/80 truncate" title={job.lastError}>
+                <div className="text-2xs text-red/80 truncate" title={job.lastError}>
                   {job.lastError}
                 </div>
               )}
               {isDeliveryFailure && !running && (
-                <div className="text-[0.7rem] text-orange/80 truncate" title={job.lastError}>
+                <div className="text-2xs text-orange/80 truncate" title={job.lastError}>
                   Delivery failed. Check cron settings.
                 </div>
               )}
             </div>
           </div>
         </div>
+        {approvalGate && approvalGate.length > 0 && (
+          <div className="mt-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5" role="alert">
+            <div className="text-xs font-semibold">✋ Auto Review stopped this test run</div>
+            <div className="mt-1 text-xs leading-5 text-muted-foreground">
+              Matched {approvalGate.length === 1 ? 'rule' : 'rules'}: {approvalGate.map((r) => `"${r.pattern}"`).join(', ')}.
+              Test runs perform real work — approve once to continue.
+            </div>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRun(approvalGate.map((r) => r.id))}
+                disabled={running}
+                className="cockpit-toolbar-button min-h-11 flex-1 justify-center text-xs font-semibold"
+              >
+                Approve once & run
+              </button>
+              <button
+                type="button"
+                onClick={() => setApprovalGate(null)}
+                disabled={running}
+                className="cockpit-toolbar-button min-h-11 flex-1 justify-center text-xs"
+              >
+                Deny
+              </button>
+            </div>
+          </div>
+        )}
         {expanded && (
           <div className="space-y-1.5">
             <div className="cockpit-divider" />
             <div className="space-y-1.5">
               {!runs.length && (
-                <div className="text-[0.7rem] text-muted-foreground">
+                <div className="text-2xs text-muted-foreground">
                   No run history yet.
                 </div>
               )}
-              {runs.map((r, i) => {
+              {runs.slice(0, MAX_RUN_HISTORY).map((r, i) => {
                 const runOk = r.status === 'success' || r.status === 'ok' || r.status === 'finished';
                 return (
                   <div key={i} className="rounded-lg border border-border/60 bg-background/30 px-2.5 py-2">
                     <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[0.667rem] text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-1.5 text-2xs text-muted-foreground">
                         <span className="tabular-nums">{r.timestamp ? new Date(r.timestamp).toLocaleString() : '—'}</span>
-                        <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone={runOk ? 'success' : 'danger'}>
+                        <span className="cockpit-badge min-h-6 px-2 text-2xs" data-tone={runOk ? 'success' : 'danger'}>
                           {runOk ? <CheckCircle size={10} /> : <XCircle size={10} />}
                           {r.status}
                         </span>
                         {r.duration !== undefined && (
-                          <span className="cockpit-badge min-h-6 px-2 text-[0.667rem] tabular-nums">{Math.round(r.duration / 1000)}s</span>
+                          <span className="cockpit-badge min-h-6 px-2 text-2xs tabular-nums">{Math.round(r.duration / 1000)}s</span>
                         )}
                       </div>
                       {r.error && (
-                        <div className="text-[0.7rem] text-red/80 break-words" title={r.error}>{r.error}</div>
+                        <div className="text-2xs text-red/80 break-words" title={r.error}>{r.error}</div>
                       )}
                       {r.summary && (
-                        <div className="text-[0.7rem] leading-4.5 text-foreground/70 line-clamp-2">{r.summary.slice(0, 150)}{r.summary.length > 150 ? '…' : ''}</div>
+                        <div className="text-2xs leading-4.5 text-foreground/70 line-clamp-2">{r.summary.slice(0, 150)}{r.summary.length > 150 ? '…' : ''}</div>
                       )}
                     </div>
                   </div>
                 );
               })}
-            </div>
+              {runs.length > MAX_RUN_HISTORY && (
+                <div className="text-2xs text-muted-foreground">
+                  Showing the {MAX_RUN_HISTORY} most recent runs.
+                </div>
+              )}            </div>
           </div>
         )}
       </div>
@@ -324,8 +366,8 @@ function CronRow({ job, onToggle, onRun, onDelete, onEdit, onFetchRuns }: {
   );
 }
 
-/** Workspace tab listing cron jobs with create/edit/delete/toggle controls. */
-export function CronsTab() {
+/** Workspace tab: routines (recurring bot work) with create/edit/delete/toggle controls. */
+export function CronsTab({ agentId }: { agentId: string }) {
   const { jobs, isLoading, error, cronWarning, fetchJobs, toggleJob, runJob, fetchRuns, addJob, updateJob, deleteJob } = useCrons();
   const { refreshSessions } = useSessionContext();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -355,6 +397,16 @@ export function CronsTab() {
     || Boolean(toolbarSummary.nextRelative)
     || toolbarSummary.enabledCount > 0;
 
+  // Routines owned by this bot (GrokBot parity: max 50 per bot).
+  const botRoutineCount = useMemo(
+    () => jobs.filter((job) => {
+      const owner = job.sessionKey ? getRootAgentId(job.sessionKey) : null;
+      return owner === null || owner === agentId;
+    }).length,
+    [jobs, agentId],
+  );
+  const routineLimitReached = botRoutineCount >= MAX_ROUTINES_PER_BOT;
+
   const handleAdd = useCallback(() => {
     setDialogMode('create');
     setEditingJob(null);
@@ -374,8 +426,8 @@ export function CronsTab() {
     return addJob(jobData);
   }, [dialogMode, editingJob, addJob, updateJob]);
 
-  const handleRun = useCallback(async (id: string) => {
-    const ok = await runJob(id);
+  const handleRun = useCallback(async (id: string, approveRules?: string[]) => {
+    const ok = await runJob(id, approveRules);
     if (ok) {
       await Promise.all([refreshSessions(), fetchJobs()]);
     }
@@ -391,27 +443,27 @@ export function CronsTab() {
               {hasToolbarMeta ? (
                 <>
                   {toolbarSummary.failedCount > 0 && (
-                    <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone="danger">
+                    <span className="cockpit-badge min-h-6 px-2 text-2xs" data-tone="danger">
                       {toolbarSummary.failedCount} failed
                     </span>
                   )}
                   {toolbarSummary.nextRelative ? (
                     <div className="shell-panel flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1">
-                      <span className="cockpit-kicker shrink-0 text-[0.5rem] tracking-[0.16em]">
+                      <span className="cockpit-kicker shrink-0 text-2xs">
                         <Clock3 size={10} className="text-primary" />
                         Next run
                       </span>
-                      <span className="cockpit-badge min-h-5 shrink-0 px-1.5 text-[0.6rem]" data-tone="primary">
+                      <span className="cockpit-badge min-h-5 shrink-0 px-1.5 text-2xs" data-tone="primary">
                         {toolbarSummary.nextRelative}
                       </span>
                     </div>
                   ) : toolbarSummary.enabledCount > 0 ? (
-                    <span className="cockpit-badge min-h-6 px-2 text-[0.667rem]" data-tone="success">
+                    <span className="cockpit-badge min-h-6 px-2 text-2xs" data-tone="success">
                       {toolbarSummary.enabledCount} live
                     </span>
                   ) : (
-                    <span className="text-[0.7rem] text-muted-foreground">
-                      No live crons
+                    <span className="text-2xs text-muted-foreground">
+                      No active routines
                     </span>
                   )}
                 </>
@@ -421,12 +473,13 @@ export function CronsTab() {
               <button
                 type="button"
                 onClick={handleAdd}
-                aria-label="Add cron job"
-                title="Add cron job"
-                className="shell-chip min-h-8 rounded-lg px-2.5 text-[0.7rem] font-medium"
+                disabled={routineLimitReached}
+                aria-label="Add routine"
+                title={routineLimitReached ? `Limit reached (${MAX_ROUTINES_PER_BOT} per bot)` : 'Add routine'}
+                className="shell-chip min-h-8 rounded-lg px-2.5 text-2xs font-medium disabled:opacity-50"
               >
                 <Plus size={13} />
-                <span>New cron</span>
+                <span>New routine{routineLimitReached ? ` (${MAX_ROUTINES_PER_BOT} max)` : ''}</span>
               </button>
               <button
                 type="button"
@@ -443,7 +496,7 @@ export function CronsTab() {
 
           <div aria-live="polite" aria-atomic="true">
             {error && !cronWarning && (
-              <div className="cockpit-note px-3 py-2 text-[0.733rem]" data-tone="danger">{error}</div>
+              <div className="cockpit-note px-3 py-2 text-xs" data-tone="danger">{error}</div>
             )}
           </div>
 
@@ -451,41 +504,41 @@ export function CronsTab() {
             <div className="cockpit-surface px-4 py-5 text-left">
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <div className="text-[0.833rem] font-medium text-foreground">Cron unavailable</div>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                  <div className="text-sm font-medium text-foreground">Cron unavailable</div>
+                  <p className="text-xs leading-4.5 text-muted-foreground">
                     {cronWarning}
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Recommended fix</div>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                  <div className="text-2xs font-medium text-foreground/80">Recommended fix</div>
+                  <p className="text-xs leading-4.5 text-muted-foreground">
                     Ask your agent to update your OpenClaw config (<code>openclaw.json</code>) so <code>gateway.tools.allow</code> includes:
                   </p>
-                  <ul className="ml-5 list-disc space-y-1 text-[0.733rem] leading-4.5 text-muted-foreground">
+                  <ul className="ml-5 list-disc space-y-1 text-xs leading-4.5 text-muted-foreground">
                     {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
                       <li key={`recommended-${tool}`}><code>{tool}</code></li>
                     ))}
                   </ul>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">Then restart the gateway.</p>
+                  <p className="text-xs leading-4.5 text-muted-foreground">Then restart the gateway.</p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Manual fix</div>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                  <div className="text-2xs font-medium text-foreground/80">Manual fix</div>
+                  <p className="text-xs leading-4.5 text-muted-foreground">
                     Edit <code>openclaw.json</code> and add these entries to <code>gateway.tools.allow</code>:
                   </p>
-                  <ul className="ml-5 list-disc space-y-1 text-[0.733rem] leading-4.5 text-muted-foreground">
+                  <ul className="ml-5 list-disc space-y-1 text-xs leading-4.5 text-muted-foreground">
                     {CRON_GATEWAY_TOOL_ALLOWLIST.map((tool) => (
                       <li key={`manual-${tool}`}><code>{tool}</code></li>
                     ))}
                   </ul>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">Then restart the gateway.</p>
+                  <p className="text-xs leading-4.5 text-muted-foreground">Then restart the gateway.</p>
                 </div>
 
                 <div className="space-y-1">
-                  <div className="text-[0.7rem] font-medium uppercase tracking-[0.18em] text-foreground/80">Local install shortcut</div>
-                  <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                  <div className="text-2xs font-medium text-foreground/80">Local install shortcut</div>
+                  <p className="text-xs leading-4.5 text-muted-foreground">
                     If this is a local install, rerun <code>npm run setup</code> to restore the missing entries.
                   </p>
                 </div>
@@ -504,8 +557,8 @@ export function CronsTab() {
           {!isLoading && !jobs.length && !error && !cronWarning && (
             <div className="cockpit-surface px-4 py-5 text-center">
               <div className="space-y-1">
-                <div className="text-[0.833rem] font-medium text-foreground">No scheduled tasks yet</div>
-                <p className="text-[0.733rem] leading-4.5 text-muted-foreground">
+                <div className="text-sm font-medium text-foreground">No scheduled tasks yet</div>
+                <p className="text-xs leading-4.5 text-muted-foreground">
                   Create one to schedule a private task or a main-thread reminder.
                 </p>
               </div>

@@ -36,7 +36,7 @@ export function useProposals() {
       const res = await fetch('/api/kanban/proposals?status=pending', { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ProposalsResponse = await res.json();
-      setProposals(data.proposals);
+      setProposals(Array.isArray(data?.proposals) ? data.proposals : []);
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
       // Silent errors on polls

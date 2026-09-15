@@ -34,7 +34,7 @@ function RelationList({
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+      <div className="flex items-center gap-2 text-2xs font-semibold text-muted-foreground">
         <GitBranch size={13} />
         <span>{title}</span>
       </div>
@@ -134,7 +134,7 @@ export function BeadViewerTab({ beadTarget, onOpenBeadId, onOpenWorkspacePath, p
 
           {bead.notes ? (
             <div className="mt-5 border-t border-border/50 pt-5">
-              <div className="mb-3 flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+              <div className="mb-3 flex items-center gap-2 text-2xs font-semibold text-muted-foreground">
                 <CircleDot size={13} />
                 <span>Notes</span>
               </div>
@@ -159,7 +159,7 @@ export function BeadViewerTab({ beadTarget, onOpenBeadId, onOpenWorkspacePath, p
 
         {bead.linkedPlan ? (
           <section className="shell-panel rounded-[28px] border border-border/60 p-5 sm:p-6">
-            <div className="mb-3 flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            <div className="mb-3 flex items-center gap-2 text-2xs font-semibold text-muted-foreground">
               <FileText size={13} />
               <span>Linked plan</span>
             </div>

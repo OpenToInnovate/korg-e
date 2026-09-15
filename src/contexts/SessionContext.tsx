@@ -49,6 +49,7 @@ interface SessionContextValue {
   agentStatus: Record<string, GranularAgentState>;
   unreadSessions: Record<string, boolean>;
   markSessionRead: (key: string) => void;
+  markSessionUnread: (key: string) => void;
   abortSession: (sessionKey: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   deleteSession: (sessionKey: string) => Promise<void>;
@@ -948,6 +949,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     agentStatus,
     unreadSessions,
     markSessionRead,
+    markSessionUnread,
     abortSession,
     refreshSessions,
     deleteSession,
@@ -959,7 +961,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     agentName,
   }), [
     displaySessions, sessionsLoading, currentSession, setCurrentSession, busyState, agentStatus,
-    unreadSessions, markSessionRead,
+    unreadSessions, markSessionRead, markSessionUnread,
     abortSession, refreshSessions, deleteSession, spawnSession, renameSession,
     updateSessionFromEvent, agentLogEntries, eventEntries, agentName,
   ]);

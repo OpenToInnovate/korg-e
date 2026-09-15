@@ -7,7 +7,7 @@ import { PROGRESS_BAR_TRANSITION } from '@/lib/progress-colors';
 import { getStatusBadgeText, getStatusBadgeClasses } from './statusUtils';
 import { ChevronRight, ChevronDown, EllipsisVertical, PenLine, Timer, CornerDownRight } from 'lucide-react';
 import { SessionInfoPanel } from './SessionInfoPanel';
-import CleatusBotAvatar from '@/components/CleatusBotAvatar';
+import KorgeAvatar from '@/components/KorgeAvatar';
 
 // Pre-defined color configs to avoid object creation during render
 const COLORS_CRITICAL = {
@@ -31,7 +31,7 @@ const COLORS_NORMAL = {
 // Grokbot/OpenBot-style avatars: stable generated identity per session
 function SessionAvatar({ sessionKey, label, running }: { sessionKey: string; label: string; running: boolean }) {
   return (
-    <CleatusBotAvatar
+    <KorgeAvatar
       name={sessionKey || label}
       size={30}
       state={running ? 'working' : 'idle'}
@@ -203,8 +203,8 @@ export const SessionNode = memo(function SessionNode({
 
   // Compute badge text and classes from granular status or fall back to binary
   const badgeText = (isCron || isCronRun)
-    ? (running ? 'RUNNING' : isCron ? 'CRON' : 'RUN')
-    : granularStatus ? getStatusBadgeText(granularStatus) : (running ? 'WORKING' : 'IDLE');
+    ? (running ? 'Running' : isCron ? 'Cron' : 'Run')
+    : granularStatus ? getStatusBadgeText(granularStatus) : (running ? 'Working' : 'Idle');
   const badgeClasses = (isCron || isCronRun)
     ? (running ? 'bg-purple/20 text-purple' : 'bg-purple/10 text-purple/70')
     : granularStatus
@@ -289,20 +289,20 @@ export const SessionNode = memo(function SessionNode({
               }}
               onBlur={onRenameCommit}
               onClick={(e) => e.stopPropagation()}
-              className="text-foreground text-[0.8125rem] font-semibold flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 rounded focus:outline-none focus:border-primary"
+              className="text-foreground text-xs font-semibold flex-1 min-w-0 bg-background border border-border/60 px-1 py-0 rounded focus:outline-none focus:border-primary"
             />
           ) : (
             <SessionInfoPanel session={node.session} running={running}>
               <span className="flex w-full items-baseline gap-2">
                 <span className={cn(
-                  "min-w-0 flex-1 truncate cursor-pointer text-[0.8125rem] font-semibold",
+                  "min-w-0 flex-1 truncate cursor-pointer text-xs font-semibold",
                   isCronRun ? "text-muted-foreground font-normal" : "text-foreground"
                 )}>
                   {isCron && <Timer size={11} className="text-purple mr-1 inline shrink-0" aria-label="Cron job" />}
                   {isCronRun && <CornerDownRight size={10} className="text-purple/60 mr-1 inline shrink-0" aria-label="Cron run" />}
                   {label}
                 </span>
-                <span className="shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground">
+                <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
                   {rowTime}
                 </span>
               </span>
@@ -310,8 +310,8 @@ export const SessionNode = memo(function SessionNode({
           )}
 
           {/* Status + usage preview line */}
-          <span className="flex min-w-0 items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
-            <span className={`shrink-0 rounded px-1 py-px text-[0.5625rem] font-bold uppercase tracking-wider ${badgeClasses}`}>
+          <span className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
+            <span className={`shrink-0 rounded px-1 py-px text-2xs font-bold ${badgeClasses}`}>
               {badgeText}
             </span>
             <span className="truncate">{previewLine}</span>
@@ -346,7 +346,7 @@ export const SessionNode = memo(function SessionNode({
                     type="button"
                     onClick={handleAbortFromMenu}
                     title="Abort session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-2xs w-5 h-5 flex items-center justify-center"
                   >
                     ⏹
                   </button>
@@ -356,7 +356,7 @@ export const SessionNode = memo(function SessionNode({
                     type="button"
                     onClick={handleRenameFromMenu}
                     title="Rename session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-2xs w-5 h-5 flex items-center justify-center"
                   >
                     <PenLine size={10} />
                   </button>
@@ -366,7 +366,7 @@ export const SessionNode = memo(function SessionNode({
                     type="button"
                     onClick={handleDeleteFromMenu}
                     title="Delete session"
-                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                    className="bg-card border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-2xs w-5 h-5 flex items-center justify-center"
                   >
                     ✕
                   </button>
@@ -380,7 +380,7 @@ export const SessionNode = memo(function SessionNode({
               title="Session actions"
               aria-label="Session actions"
               aria-expanded={actionsOpen}
-              className="bg-transparent border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-6 h-6 flex items-center justify-center"
+              className="bg-transparent border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-2xs w-6 h-6 flex items-center justify-center"
             >
               <EllipsisVertical size={12} />
             </button>
@@ -394,7 +394,7 @@ export const SessionNode = memo(function SessionNode({
               type="button"
               onClick={handleAbortClick}
               title="Abort session"
-              className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+              className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-2xs w-5 h-5 flex items-center justify-center"
             >
               ⏹
             </button>
@@ -406,7 +406,7 @@ export const SessionNode = memo(function SessionNode({
                   type="button"
                   onClick={handleRenameClick}
                   title="Rename session"
-                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-foreground hover:border-muted-foreground cursor-pointer text-2xs w-5 h-5 flex items-center justify-center"
                 >
                   <PenLine size={10} />
                 </button>
@@ -416,7 +416,7 @@ export const SessionNode = memo(function SessionNode({
                   type="button"
                   onClick={handleDeleteClick}
                   title="Delete session"
-                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-[0.667rem] w-5 h-5 flex items-center justify-center"
+                  className="bg-card/90 border border-border/60 text-muted-foreground hover:text-red hover:border-red/40 cursor-pointer text-2xs w-5 h-5 flex items-center justify-center"
                 >
                   ✕
                 </button>

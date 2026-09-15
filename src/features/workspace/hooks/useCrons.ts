@@ -3,6 +3,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { AutoReviewRequiredError } from '@/features/auto-review/errors';
 
 export interface CronDelivery {
   mode: string;
@@ -157,11 +158,20 @@ export function useCrons() {
     }
   }, [setErrorState]);
 
-  const runJob = useCallback(async (id: string) => {
+  const runJob = useCallback(async (id: string, approveRules?: string[]) => {
     try {
-      const res = await fetch(`/api/crons/${encodeURIComponent(id)}/run`, { method: 'POST' });
-      const data = await res.json() as { ok: boolean; error?: string };
-      if (!data.ok) throw new Error(data.error || 'Failed to run');
+      const res = await fetch(`/api/crons/${encodeURIComponent(id)}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(approveRules ? { approveRules } : {}),
+      });
+      const data = await res.json() as { ok: boolean; error?: string; details?: string; rules?: Array<{ id: string; pattern: string }> };
+      if (!data.ok) {
+        if (data.error === 'approval_required' && Array.isArray(data.rules)) {
+          throw new AutoReviewRequiredError(data.rules, data.details);
+        }
+        throw new Error(data.details || data.error || 'Failed to run');
+      }
       const nowIso = new Date().toISOString();
       setJobs(prev => prev.map(job => (
         job.id === id
@@ -170,6 +180,8 @@ export function useCrons() {
       )));
       return true;
     } catch (err) {
+      // Approval gates propagate so the UI can show an approve-once prompt.
+      if (err instanceof AutoReviewRequiredError) throw err;
       setErrorState(err);
       return false;
     }

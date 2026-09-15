@@ -15,7 +15,7 @@ function getCSSVar(name: string): string {
 function getThemeColors() {
   const primary = getCSSVar('--color-primary') || '#8b5cf6';
   const green = getCSSVar('--color-green') || '#22c55e';
-  const orange = getCSSVar('--color-orange') || '#f97316';
+  const orange = getCSSVar('--color-orange') || '#FF9F0A';
   const red = getCSSVar('--color-red') || '#ef4444';
   const blue = getCSSVar('--color-blue') || primary;
   const mutedFg = getCSSVar('--color-muted-foreground') || '#888';

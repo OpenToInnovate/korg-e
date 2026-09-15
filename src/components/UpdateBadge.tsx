@@ -59,12 +59,12 @@ export function UpdateBadge() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1 text-[0.6rem] text-primary hover:text-primary/80 transition-colors cursor-pointer ml-1.5"
+        className="inline-flex items-center gap-1 text-2xs text-primary hover:text-primary/80 transition-colors cursor-pointer ml-1.5"
         title={`Update available: v${versionInfo.latest}`}
         aria-label={`Update available: version ${versionInfo.latest}. Click for instructions.`}
       >
         <ArrowUpCircle className="w-3 h-3" />
-        <span className="uppercase tracking-wide font-bold">update</span>
+        <span className="font-bold">Update</span>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -72,7 +72,7 @@ export function UpdateBadge() {
           <DialogHeader>
             <DialogTitle>Update Available</DialogTitle>
             <DialogDescription>
-              Cleatus Bot <span className="font-mono font-semibold text-foreground">v{versionInfo.latest}</span> is
+              Korg-e Bot <span className="font-mono font-semibold text-foreground">v{versionInfo.latest}</span> is
               available. You're running <span className="font-mono text-muted-foreground">v{versionInfo.current}</span>.
             </DialogDescription>
           </DialogHeader>
@@ -93,7 +93,7 @@ export function UpdateBadge() {
             </div>
             <div className="text-xs text-muted-foreground space-y-1">
               <p>This will fetch the latest release, rebuild, restart, and verify health.</p>
-              <p>If anything fails, Cleatus Bot automatically rolls back to your current version.</p>
+              <p>If anything fails, Korg-e Bot automatically rolls back to your current version.</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-1">Other options:</p>

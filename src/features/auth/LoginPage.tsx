@@ -8,7 +8,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import CleatusLogo from '../../components/CleatusLogo';
+import KorgeLogo from '../../components/KorgeLogo';
 
 interface LoginPageProps {
   onLogin: (password: string) => Promise<void>;
@@ -42,40 +42,40 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
         <div className="grid lg:grid-cols-[1.15fr_0.85fr]">
           <div className="border-b border-border/70 bg-gradient-to-br from-background via-card/90 to-secondary/90 px-6 py-8 sm:px-8 lg:border-b-0 lg:border-r">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/20 bg-background/60">
-              <CleatusLogo size={40} withFootball />
+              <KorgeLogo size={40} withTongue />
             </div>
-            <div className="mt-6 text-[0.667rem] font-medium uppercase tracking-[0.32em] text-primary/80">
+            <div className="mt-6 text-2xs font-medium text-primary/80">
               Private Cockpit Access
             </div>
             <h1 className="mt-3 max-w-[12ch] text-4xl font-semibold tracking-[-0.05em] text-foreground sm:text-5xl">
               Sign in to your agent control surface
             </h1>
             <p className="mt-4 max-w-[48ch] text-sm leading-6 text-muted-foreground sm:text-base">
-              Cleatus Bot is the high visibility workspace for OpenClaw agents. Authenticate once, then manage chats, tasks, files, memory, and telemetry from one place.
+              Korg-e Bot is the friendly messaging home for your OpenClaw bots. Authenticate once, then message bots, run routines, and review results from one place.
             </p>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Sessions</div>
+                <div className="text-2xs font-medium text-muted-foreground">Sessions</div>
                 <div className="mt-2 text-sm font-medium text-foreground">Live agent context</div>
               </div>
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Workspace</div>
+                <div className="text-2xs font-medium text-muted-foreground">Workspace</div>
                 <div className="mt-2 text-sm font-medium text-foreground">Files, memory, and skills</div>
               </div>
               <div className="shell-panel rounded-2xl px-4 py-3">
-                <div className="text-[0.667rem] font-medium uppercase tracking-[0.22em] text-muted-foreground">Telemetry</div>
+                <div className="text-2xs font-medium text-muted-foreground">Telemetry</div>
                 <div className="mt-2 text-sm font-medium text-foreground">Costs, events, and uptime</div>
               </div>
             </div>
           </div>
 
           <div className="px-6 py-8 sm:px-8">
-            <div className="text-[0.667rem] font-medium uppercase tracking-[0.3em] text-primary/80">
+            <div className="text-2xs font-medium text-primary/80">
               Authentication Required
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-foreground">
-              Unlock Cleatus Bot
+              Unlock Korg-e Bot
             </h2>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
               Enter the password configured for this deployment. Your gateway token also works if password auth is using the fallback path.
@@ -83,7 +83,7 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
 
             <form onSubmit={handleSubmit} className="mt-8 space-y-4">
               <div>
-                <label htmlFor="nerve-password" className="mb-2 block text-[0.733rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                <label htmlFor="nerve-password" className="mb-2 block text-xs font-medium text-muted-foreground">
                   Password
                 </label>
                 <Input
@@ -108,9 +108,9 @@ export function LoginPage({ onLogin, error }: LoginPageProps) {
                 type="submit"
                 disabled={submitting || !password.trim()}
                 size="lg"
-                className="w-full text-[0.733rem] uppercase tracking-[0.22em]"
+                className="w-full text-xs"
               >
-                {submitting ? 'Signing In…' : 'Enter Cleatus Bot'}
+                {submitting ? 'Signing In…' : 'Enter Korg-e Bot'}
               </Button>
             </form>
 

@@ -1,6 +1,6 @@
 /**
  * WorkspaceTabs — Tab bar styled like the Agents panel header.
- * Uses ◆ diamond + uppercase labels with accent color.
+ * Uses ◆ diamond + labels with accent color.
  */
 
 import { useCallback } from 'react';
@@ -16,7 +16,7 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: 'memory', label: 'Memory', icon: Brain },
-  { id: 'crons', label: 'Crons', icon: Clock },
+  { id: 'crons', label: 'Routines', icon: Clock },
   { id: 'kanban', label: 'Tasks', icon: Columns3 },
   { id: 'config', label: 'Config', icon: Settings },
 ];
@@ -79,9 +79,9 @@ export function WorkspaceTabs({ activeTab, onTabChange, cronCount, kanbanCount, 
             data-active={isActive}
           >
             <Icon size={11} />
-            <span className="uppercase">{tab.label}</span>
+            <span>{tab.label}</span>
             {badge !== undefined && (
-              <span className="text-[0.6rem] opacity-70">({badge})</span>
+              <span className="text-2xs opacity-70">({badge})</span>
             )}
           </button>
         );

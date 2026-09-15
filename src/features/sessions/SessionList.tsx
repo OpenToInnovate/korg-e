@@ -186,7 +186,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
             onChange={(e) => setSessionSearch(e.target.value)}
             placeholder="Search"
             aria-label="Search sessions"
-            className="w-full border-0 bg-transparent text-[0.8125rem] text-foreground outline-none placeholder:text-muted-foreground"
+            className="w-full border-0 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
           />
         </div>
       </div>
@@ -194,7 +194,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
         {isLoading && visibleNodes.length === 0 ? (
           <SessionSkeletonGroup count={4} />
         ) : visibleNodes.length === 0 ? (
-          <div className="text-muted-foreground px-3 py-2 text-[0.733rem]">No active sessions</div>
+          <div className="text-muted-foreground px-3 py-2 text-xs">No active sessions</div>
         ) : visibleNodes.map((node) => {
           const sessionKey = node.key;
           const sessionType = getSessionType(sessionKey);
@@ -250,8 +250,8 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
         <div className="flex items-center gap-2.5">
           <BoringAvatar name="operator" size={26} variant="beam" colors={['#C0C6CC', '#EE1515', '#1E4FD8', '#D97B29']} />
           <div className="flex min-w-0 flex-col leading-tight">
-            <span className="truncate text-[0.8125rem] font-semibold text-foreground">Operator</span>
-            <span className="truncate text-[0.6875rem] text-muted-foreground">OpenClaw · {agentName}</span>
+            <span className="truncate text-xs font-semibold text-foreground">Operator</span>
+            <span className="truncate text-2xs text-muted-foreground">OpenClaw · {agentName}</span>
           </div>
         </div>
       </div>
@@ -260,7 +260,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
         <DialogContent className="bg-card border-border max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-red font-mono text-sm tracking-wider uppercase flex items-center gap-2">
+            <DialogTitle className="text-red font-mono text-sm flex items-center gap-2">
               <AlertTriangle size={16} />
               {deleteTarget?.descendantCount ? 'Delete Session Tree' : 'Delete Session'}
             </DialogTitle>
@@ -274,9 +274,9 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
           </DialogHeader>
           <div className="py-4">
             <div className="bg-background border border-border/60 px-3 py-2">
-              <p className="text-[0.733rem] text-muted-foreground uppercase tracking-wider mb-1">Session:</p>
-              <p className="text-[0.8rem] text-foreground font-mono">{deleteTarget?.label}</p>
-              <p className="text-[0.667rem] text-muted-foreground font-mono mt-1 break-all">{deleteTarget?.key}</p>
+              <p className="text-xs text-muted-foreground mb-1">Session:</p>
+              <p className="text-xs text-foreground font-mono">{deleteTarget?.label}</p>
+              <p className="text-2xs text-muted-foreground font-mono mt-1 break-all">{deleteTarget?.key}</p>
             </div>
           </div>
           <DialogFooter className="gap-2">

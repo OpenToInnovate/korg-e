@@ -6,6 +6,7 @@ import type { KanbanTask, TaskStatus } from './types';
 import { COLUMN_LABELS } from './types';
 import { KanbanCard } from './KanbanCard';
 import { TASK_STATUS_TONE } from './tone';
+import { cn } from '@/lib/utils';
 
 interface KanbanColumnProps {
   status: TaskStatus;
@@ -13,6 +14,8 @@ interface KanbanColumnProps {
   onCardClick: (task: KanbanTask) => void;
   /** Display label for the column. Falls back to COLUMN_LABELS or a title-cased version of the key. */
   label?: string;
+  /** Width/layout override (phones render a single full-width column). */
+  className?: string;
 }
 
 /** Derive a human-readable label from a status key as last resort (e.g. "in-progress" → "In Progress"). */
@@ -20,7 +23,7 @@ function labelFromKey(key: string): string {
   return key.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick, label }: KanbanColumnProps) {
+export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick, label, className }: KanbanColumnProps) {
   const accent = TASK_STATUS_TONE[status] ?? TASK_STATUS_TONE['todo'];
   const displayLabel = label ?? COLUMN_LABELS[status] ?? labelFromKey(status);
 
@@ -38,17 +41,19 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
 
   return (
     <div
-      className={`shell-panel flex h-full min-w-[280px] w-[320px] max-w-[360px] shrink-0 flex-col overflow-hidden rounded-[24px] transition-[border-color,background-color,box-shadow] duration-150 ${
-        isOverColumn ? 'border-primary/45 bg-primary/[0.06] shadow-[0_18px_38px_rgba(0,0,0,0.22)]' : ''
-      }`}
+      className={cn(
+        'shell-panel flex h-full min-w-[280px] w-[320px] max-w-[360px] shrink-0 flex-col overflow-hidden rounded-[24px] transition-[border-color,background-color,box-shadow] duration-150',
+        isOverColumn && 'border-primary/45 bg-primary/[0.06] shadow-[0_18px_38px_rgba(0,0,0,0.22)]',
+        className,
+      )}
     >
       <div className="sticky top-0 z-10 flex h-11 items-center justify-between border-b border-border/55 bg-card/78 px-3 backdrop-blur-lg">
         <div className="flex items-center gap-2">
-          <span className={`text-[0.733rem] font-semibold uppercase tracking-[0.18em] ${accent.textClass}`}>
+          <span className={`text-xs font-semibold ${accent.textClass}`}>
           {displayLabel}
           </span>
         </div>
-        <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-[0.667rem] font-semibold tabular-nums ${accent.badgeClass}`}>
+        <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-2xs font-semibold tabular-nums ${accent.badgeClass}`}>
           {tasks.length}
         </span>
       </div>

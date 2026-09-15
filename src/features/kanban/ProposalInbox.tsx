@@ -8,14 +8,14 @@ import { TASK_STATUS_TONE } from './tone';
 function TypeBadge({ type }: { type: 'create' | 'update' }) {
   if (type === 'create') {
     return (
-      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[0.667rem] font-semibold ${TASK_STATUS_TONE.done.badgeClass}`}>
+      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-2xs font-semibold ${TASK_STATUS_TONE.done.badgeClass}`}>
         <PlusCircle size={10} />
         Create
       </span>
     );
   }
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[0.667rem] font-semibold ${TASK_STATUS_TONE.todo.badgeClass}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-2xs font-semibold ${TASK_STATUS_TONE.todo.badgeClass}`}>
       <ArrowUpCircle size={10} />
       Update
     </span>
@@ -37,7 +37,7 @@ function RelativeTime({ ts }: { ts: number }) {
   else if (secs < 86400) label = `${Math.floor(secs / 3600)}h ago`;
   else label = `${Math.floor(secs / 86400)}d ago`;
 
-  return <span className="text-[0.667rem] text-muted-foreground tabular-nums">{label}</span>;
+  return <span className="text-2xs text-muted-foreground tabular-nums">{label}</span>;
 }
 
 /* ── Summary text ── */
@@ -52,12 +52,12 @@ function ProposalSummary({ proposal }: { proposal: KanbanProposal }) {
         <p className="text-xs font-medium text-foreground truncate">{title}</p>
         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
           {priority && (
-            <span className="text-[0.667rem] text-muted-foreground">
+            <span className="text-2xs text-muted-foreground">
               {priority}
             </span>
           )}
           {labels?.map((l) => (
-            <span key={l} className="text-[0.667rem] px-1 py-0 rounded bg-muted text-muted-foreground">
+            <span key={l} className="text-2xs px-1 py-0 rounded bg-muted text-muted-foreground">
               {l}
             </span>
           ))}
@@ -72,9 +72,9 @@ function ProposalSummary({ proposal }: { proposal: KanbanProposal }) {
   return (
     <div className="min-w-0 flex-1">
       <p className="text-xs font-medium text-foreground truncate">
-        Update: <span className="font-mono text-[0.667rem] text-muted-foreground">{taskId.slice(0, 8)}</span>
+        Update: <span className="font-mono text-2xs text-muted-foreground">{taskId.slice(0, 8)}</span>
       </p>
-      <p className="text-[0.667rem] text-muted-foreground truncate">
+      <p className="text-2xs text-muted-foreground truncate">
         Fields: {changes.join(', ') || 'none'}
       </p>
     </div>
@@ -131,7 +131,7 @@ function ProposalRow({
           className="border-green/30 bg-green/8 text-green hover:bg-green/12"
         >
           <Check size={14} />
-          <span className="hidden sm:inline">Approve</span>
+          <span>Approve</span>
         </Button>
         <Button
           variant="outline"
@@ -143,7 +143,7 @@ function ProposalRow({
           className="border-destructive/22 bg-destructive/8 text-destructive hover:bg-destructive/14"
         >
           <X size={14} />
-          <span className="hidden sm:inline">Reject</span>
+          <span>Reject</span>
         </Button>
       </div>
     </div>

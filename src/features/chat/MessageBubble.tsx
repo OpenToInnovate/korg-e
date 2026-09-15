@@ -54,9 +54,19 @@ interface MessageBubbleProps {
   pathLinkPrefixes?: string[];
   pathLinkAliases?: Record<string, string>;
   onOpenBeadId?: (target: BeadLinkTarget) => void | Promise<void>;
+  /** Emoji reactions for this message (keyed by emoji). */
+  reactions?: Record<string, { count: number; mine: boolean }>;
+  /** Toggle my reaction (stable index-based callback). */
+  onToggleReaction?: (index: number, emoji: string) => void;
+  /** Number of thread replies on this message. */
+  replyCount?: number;
+  /** Open the thread pane for this message (stable index-based callback). */
+  onReplyInThread?: (index: number) => void;
 }
 
-function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases, onOpenBeadId }: MessageBubbleProps) {
+const QUICK_REACTIONS = ['🐶', '❤️', '👍', '👀', '🎉', '🚀'];
+
+function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, onOpenWorkspacePath, pathLinkPrefixes, pathLinkAliases, onOpenBeadId, reactions, onToggleReaction, replyCount, onReplyInThread }: MessageBubbleProps) {
   const isUser = msg.role === 'user';
   const isAssistant = msg.role === 'assistant';
   const isSystem = msg.role === 'system' || msg.role === 'event';
@@ -65,6 +75,8 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
   const isCollapsible = isMessageCollapsible(msg);
   const [copied, setCopied] = useState(false);
   const [sysExpanded, setSysExpanded] = useState(false);
+  const [reactOpen, setReactOpen] = useState(false);
+  const reactionEntries = reactions ? Object.entries(reactions) : [];
 
   // useCallback must be called unconditionally (before any early returns)
   const handleCopy = useCallback(async (e: React.MouseEvent) => {
@@ -87,16 +99,16 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           type="button"
           onClick={() => setSysExpanded(!sysExpanded)}
           aria-expanded={sysExpanded}
-          className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-4 py-2 text-[0.733rem] text-muted-foreground transition-colors hover:bg-secondary/50"
+          className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-4 py-2 text-xs text-muted-foreground transition-colors hover:bg-secondary/50"
         >
           <span className={`shrink-0 w-3 transition-transform ${sysExpanded ? 'rotate-90' : ''}`}>›</span>
           <span>{statusIcon}</span>
           <span className="truncate font-medium text-info">{msg.systemLabel || 'System notification'}</span>
-          <span className="ml-auto shrink-0 font-mono text-[0.667rem] text-info/40">{timeStr}</span>
+          <span className="ml-auto shrink-0 font-mono text-2xs text-info/40">{timeStr}</span>
         </button>
         {sysExpanded && (
-          <div className="max-h-[300px] overflow-y-auto border-t border-border/20 bg-secondary/30 px-8 py-3 text-[0.8rem] text-muted-foreground">
-            <pre className="whitespace-pre-wrap font-mono text-[0.667rem] leading-relaxed">{msg.rawText}</pre>
+          <div className="max-h-[300px] overflow-y-auto border-t border-border/20 bg-secondary/30 px-8 py-3 text-xs text-muted-foreground">
+            <pre className="whitespace-pre-wrap font-mono text-2xs leading-relaxed">{msg.rawText}</pre>
           </div>
         )}
       </div>
@@ -153,25 +165,25 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           onClick={() => onToggleCollapse(index)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
         >
-          <span className={`mt-0.5 w-3 shrink-0 text-[0.667rem] text-primary/60 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
-          <span className="mt-0.5 shrink-0 text-[0.667rem] text-primary/60">💭</span>
-          <span className="shrink-0 text-[0.733rem] font-medium text-primary/78">Thinking</span>
+          <span className={`mt-0.5 w-3 shrink-0 text-2xs text-primary/60 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
+          <span className="mt-0.5 shrink-0 text-2xs text-primary/60">💭</span>
+          <span className="shrink-0 text-xs font-medium text-primary/78">Thinking</span>
           {msg.thinkingDurationMs && (
-            <span className="shrink-0 text-[0.667rem] tabular-nums text-primary/52">
+            <span className="shrink-0 text-2xs tabular-nums text-primary/52">
               • {msg.thinkingDurationMs >= 1000
                 ? `${(msg.thinkingDurationMs / 1000).toFixed(1)}s`
                 : `${msg.thinkingDurationMs}ms`}
             </span>
           )}
           {isCollapsed && (
-            <span className="min-w-0 flex-1 truncate text-[0.667rem] italic text-primary/44">
+            <span className="min-w-0 flex-1 truncate text-2xs italic text-primary/44">
               {msg.rawText.slice(0, 100)}{msg.rawText.length > 100 ? '…' : ''}
             </span>
           )}
-          <span className="mt-0.5 shrink-0 font-mono text-[0.667rem] tabular-nums text-primary/36">{timeStr}</span>
+          <span className="mt-0.5 shrink-0 font-mono text-2xs tabular-nums text-primary/36">{timeStr}</span>
         </div>
         {!isCollapsed && (
-          <div className="ml-3 border-l border-primary/12 px-3 pb-2 pt-1 text-[0.8rem] text-foreground/70 msg-body-intermediate">
+          <div className="ml-3 border-l border-primary/12 px-3 pb-2 pt-1 text-xs text-foreground/70 msg-body-intermediate">
             <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
               <MarkdownRenderer content={msg.rawText} searchQuery={searchQuery} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
             </Suspense>
@@ -193,21 +205,21 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           onClick={() => onToggleCollapse(index)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleCollapse(index); } }}
         >
-          <span className={`text-muted-foreground text-[0.667rem] shrink-0 w-3 mt-0.5 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
-          <span className="text-muted-foreground/50 text-[0.667rem] shrink-0 mt-0.5">💬</span>
+          <span className={`text-muted-foreground text-2xs shrink-0 w-3 mt-0.5 transition-transform ${!isCollapsed ? 'rotate-90' : ''}`}>›</span>
+          <span className="text-muted-foreground/50 text-2xs shrink-0 mt-0.5">💬</span>
           {isCollapsed ? (
-            <span className="text-muted-foreground/70 text-[0.733rem] truncate flex-1 min-w-0 italic">
+            <span className="text-muted-foreground/70 text-xs truncate flex-1 min-w-0 italic">
               {msg.rawText.split('\n').find(l => l.trim())?.slice(0, 100) || msg.rawText.slice(0, 100)}
               {msg.rawText.length > 100 ? '…' : ''}
             </span>
           ) : (
-            <div className="text-muted-foreground/70 text-[0.8rem] flex-1 min-w-0 msg-body-intermediate">
+            <div className="text-muted-foreground/70 text-xs flex-1 min-w-0 msg-body-intermediate">
               <Suspense fallback={<span className="text-muted-foreground text-xs">…</span>}>
                 <MarkdownRenderer content={displayContent} searchQuery={searchQuery} suppressImages={isAssistant} onOpenWorkspacePath={onOpenWorkspacePath} pathLinkPrefixes={pathLinkPrefixes} pathLinkAliases={pathLinkAliases} onOpenBeadId={onOpenBeadId} />
               </Suspense>
             </div>
           )}
-          <span className="text-muted-foreground/40 text-[0.667rem] shrink-0 tabular-nums mt-0.5">{timeStr}</span>
+          <span className="text-muted-foreground/40 text-2xs shrink-0 tabular-nums mt-0.5">{timeStr}</span>
         </div>
       </div>
     );
@@ -220,7 +232,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           type="button"
           onClick={() => onToggleCollapse(index)}
           aria-expanded={!isCollapsed}
-          className="mx-auto inline-flex max-w-full cursor-pointer select-none items-center gap-2 text-[0.7rem] text-muted-foreground/70 transition-colors hover:text-muted-foreground"
+          className="mx-auto inline-flex max-w-full cursor-pointer select-none items-center gap-2 text-2xs text-muted-foreground/70 transition-colors hover:text-muted-foreground"
         >
           <span className="truncate">{preview || msg.systemLabel || 'System'}</span>
           <span className="shrink-0 tabular-nums opacity-70">{timeStr}</span>
@@ -285,7 +297,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           {msg.uploadAttachments && msg.uploadAttachments.length > 0 && (
             <div className="mt-3 flex flex-col gap-2">
               {msg.uploadAttachments.map((attachment) => (
-                <div key={attachment.id} className="rounded-xl border border-border/60 bg-secondary/30 px-3 py-2 text-[0.733rem] text-muted-foreground">
+                <div key={attachment.id} className="rounded-xl border border-border/60 bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-foreground">{attachment.name}</span>
                     <span className="cockpit-badge" data-tone={attachment.mode === 'file_reference' ? 'warning' : 'primary'}>
@@ -295,7 +307,7 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
                     <span>{attachment.mimeType}</span>
                   </div>
                   {attachment.reference?.path && (
-                    <div className="mt-1 font-mono text-[0.667rem] text-muted-foreground/90">{attachment.reference.path}</div>
+                    <div className="mt-1 font-mono text-2xs text-muted-foreground/90">{attachment.reference.path}</div>
                   )}
                 </div>
               ))}
@@ -315,16 +327,119 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
           {!msg.streaming && (
             <div className="absolute -top-3 right-2 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
               <button
-                className="cockpit-toolbar-button min-h-7 px-2 text-[0.667rem]"
+                className="cockpit-toolbar-button min-h-7 px-2 text-2xs"
                 aria-label="Copy message to clipboard"
                 onClick={handleCopy}
               >
                 {copied ? '✓' : 'COPY'}
               </button>
+              {onToggleReaction && (
+                <button
+                  className="cockpit-toolbar-button min-h-7 px-2 text-2xs"
+                  aria-label="React to message"
+                  aria-expanded={reactOpen}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReactOpen((v) => !v);
+                  }}
+                >
+                  🐶+
+                </button>
+              )}
+              {onReplyInThread && (
+                <button
+                  className="cockpit-toolbar-button min-h-7 px-2 text-2xs"
+                  aria-label="Reply in thread"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReplyInThread(index);
+                  }}
+                >
+                  ↩ REPLY
+                </button>
+              )}
+            </div>
+          )}
+          {onToggleReaction && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {reactionEntries.map(([emoji, entry]) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  aria-label={`Toggle ${emoji} reaction`}
+                  aria-pressed={entry.mine}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleReaction(index, emoji);
+                  }}
+                  className={`flex min-h-11 items-center gap-1 rounded-full border px-2.5 text-xs sm:min-h-8 ${
+                    entry.mine ? 'border-primary bg-primary/15' : 'border-border/60 bg-secondary/50'
+                  }`}
+                >
+                  <span>{emoji}</span>
+                  <span className="tabular-nums text-muted-foreground">{entry.count}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                aria-label="Add reaction"
+                aria-expanded={reactOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setReactOpen((v) => !v);
+                }}
+                className="flex min-h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-secondary/50 text-xs text-muted-foreground sm:hidden"
+              >
+                +
+              </button>
+              {onReplyInThread && (
+                <button
+                  type="button"
+                  aria-label="Reply in thread"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReplyInThread(index);
+                  }}
+                  className="flex min-h-11 w-11 items-center justify-center rounded-full border border-border/60 bg-secondary/50 text-xs text-muted-foreground sm:hidden"
+                >
+                  ↩
+                </button>
+              )}
+            </div>
+          )}
+          {onReplyInThread && (replyCount || 0) > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReplyInThread(index);
+              }}
+              className="mt-1.5 text-xs font-medium text-info hover:underline"
+            >
+              ↩ {replyCount} {replyCount === 1 ? 'reply' : 'replies'} →
+            </button>
+          )}
+          {onToggleReaction && reactOpen && (
+            <div className="mt-1.5 flex flex-wrap gap-1 rounded-2xl border border-border/60 bg-secondary/50 p-1.5" role="toolbar" aria-label="Choose a reaction">
+              {QUICK_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  aria-label={`React with ${emoji}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleReaction(index, emoji);
+                    setReactOpen(false);
+                  }}
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-lg hover:bg-accent"
+                >
+                  {emoji}
+                </button>
+              ))}
             </div>
           )}
         </div>
-        <span className="mt-0.5 select-none px-1 text-[0.625rem] tabular-nums text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="mt-0.5 select-none px-1 text-2xs tabular-nums text-muted-foreground/60 opacity-0 transition-opacity group-hover:opacity-100">
           {timeStr}
           {missionTime && <span className="ml-1 opacity-70">· {missionTime}</span>}
         </span>
@@ -398,6 +513,10 @@ export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
   if (prev.pathLinkPrefixes !== next.pathLinkPrefixes) return false;
   if (prev.pathLinkAliases !== next.pathLinkAliases) return false;
   if (prev.onOpenBeadId !== next.onOpenBeadId) return false;
+  if (prev.onToggleReaction !== next.onToggleReaction) return false;
+  if (prev.onReplyInThread !== next.onReplyInThread) return false;
+  if (prev.replyCount !== next.replyCount) return false;
+  if (JSON.stringify(prev.reactions ?? {}) !== JSON.stringify(next.reactions ?? {})) return false;
   
   // All relevant props are equal, skip re-render
   return true;

@@ -11,9 +11,9 @@ import { TASK_PRIORITY_TONE, TASK_STATUS_TONE } from './tone';
 function StatChip({ label, count, status }: { label: string; count: number; status: TaskStatus }) {
   const tone = TASK_STATUS_TONE[status];
   return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[0.733rem] font-medium ${tone.statClass}`}>
+    <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium ${tone.statClass}`}>
       <span>{label}</span>
-      <span className="rounded-full bg-background/55 px-1.5 py-0.5 font-mono text-[0.667rem] tabular-nums text-current">
+      <span className="rounded-full bg-background/55 px-1.5 py-0.5 font-mono text-2xs tabular-nums text-current">
         {count}
       </span>
     </span>
@@ -36,7 +36,7 @@ function FilterPill({
   return (
     <button
       onClick={onClick}
-      className={`h-8 rounded-full border px-3 text-[0.733rem] font-medium transition-colors cursor-pointer ${
+      className={`h-8 rounded-full border px-3 text-xs font-medium transition-colors cursor-pointer ${
         active
           ? tone.badgeClass
           : 'border-border/70 bg-background/40 text-muted-foreground hover:border-primary/24 hover:text-foreground'
@@ -129,8 +129,8 @@ export const KanbanHeader = memo(function KanbanHeader({
             Task board
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Tasks</h1>
-            <div className="hidden sm:flex items-center gap-1.5">
+            <h1 className="t-title-lg">Tasks</h1>
+            <div className="flex flex-wrap items-center gap-1.5">
               <StatChip label="To Do" count={statusCounts.todo} status="todo" />
               <StatChip label="In Progress" count={statusCounts['in-progress']} status="in-progress" />
               <StatChip label="Review" count={statusCounts.review} status="review" />
@@ -184,7 +184,7 @@ export const KanbanHeader = memo(function KanbanHeader({
             >
               <Inbox size={14} />
               {pendingProposalCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[0.667rem] font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-2xs font-bold bg-primary text-primary-foreground rounded-full flex items-center justify-center">
                   {pendingProposalCount}
                 </span>
               )}
@@ -192,14 +192,14 @@ export const KanbanHeader = memo(function KanbanHeader({
 
             {/* Inbox popover */}
             {showInbox && (
-              <div className="shell-panel absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-1.067rem))] max-w-[calc(100vw-1.067rem)] overflow-hidden rounded-3xl">
+              <div className="shell-panel fixed inset-x-2 top-20 z-50 max-h-[70vh] overflow-y-auto rounded-3xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-none sm:w-[min(360px,calc(100vw-1.067rem))] sm:max-w-[calc(100vw-1.067rem)] sm:overflow-hidden">
                 <div className="border-b border-border/50 bg-secondary/38 px-4 py-3">
-                  <span className="cockpit-kicker text-[0.6rem]">
+                  <span className="cockpit-kicker text-2xs">
                     <span className="text-primary">◆</span>
                     Agent proposals
                   </span>
                   {pendingProposalCount > 0 && (
-                    <span className="ml-2 text-[0.733rem] text-muted-foreground">{pendingProposalCount} pending</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{pendingProposalCount} pending</span>
                   )}
                 </div>
                 <ProposalInbox
@@ -212,9 +212,9 @@ export const KanbanHeader = memo(function KanbanHeader({
           </div>
 
           {/* Create */}
-          <Button size="sm" onClick={onCreateTask}>
+          <Button size="sm" onClick={onCreateTask} aria-label="New task">
             <Plus size={14} />
-            <span className="hidden sm:inline">New Task</span>
+            <span>New Task</span>
           </Button>
         </div>
       </div>
@@ -222,7 +222,7 @@ export const KanbanHeader = memo(function KanbanHeader({
       {/* Row 2: Filter controls (collapsible) */}
       {showFilters && (
         <div className="cockpit-note flex flex-wrap items-center gap-2" data-tone="primary">
-          <span className="text-[0.733rem] font-medium text-foreground">Priority</span>
+          <span className="text-xs font-medium text-foreground">Priority</span>
           {(['critical', 'high', 'normal', 'low'] as TaskPriority[]).map(p => (
             <FilterPill
               key={p}
@@ -236,7 +236,7 @@ export const KanbanHeader = memo(function KanbanHeader({
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
-              className="ml-2 text-[0.733rem] text-muted-foreground underline hover:text-foreground"
+              className="ml-2 text-xs text-muted-foreground underline hover:text-foreground"
             >
               Clear all
             </button>

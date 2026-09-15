@@ -9,6 +9,9 @@ import { ActivityLog, ChatHeader, ProcessingIndicator, ScrollToBottomButton, Str
 import { isMessageCollapsible } from './types';
 import type { ChatMsg, ImageAttachment, OutgoingUploadPayload } from './types';
 import type { BeadLinkTarget } from '@/features/beads';
+import { useReactions, type ReactionMap } from './useReactions';
+import { buildThreadMap, formatReplyPrefix, parentHash } from './threadMarkers';
+import { ApprovalCards } from './ApprovalCards';
 
 interface ChatPanelProps {
   messages: ChatMsg[];
@@ -38,10 +41,20 @@ interface ChatPanelProps {
   onToggleFileBrowser?: () => void;
   /** Whether the mobile file browser is currently collapsed. */
   isFileBrowserCollapsed?: boolean;
-  /** Mobile top bar toggle handler. */
-  onToggleMobileTopBar?: () => void;
-  /** Whether the mobile top bar is currently hidden. */
-  isMobileTopBarHidden?: boolean;
+  /** Back to Home (phone only). */
+  onBack?: () => void;
+  /** Open the bot details panel. */
+  onOpenDetails?: () => void;
+  /** Corgi variant for the current bot. */
+  agentVariant?: import('@/components/corgi/corgiVariants').CorgiVariantId;
+  /** Collar color for the current bot. */
+  agentCollar?: string;
+  /** Delete the current bot (overflow menu). */
+  onDelete?: () => void;
+  /** Group subtitle. */
+  groupSubtitle?: string;
+  /** Group member avatars. */
+  groupMembers?: Array<{ id: string; name: string; variant?: import('@/components/corgi/corgiVariants').CorgiVariantId; color?: string }>;
   /** Open or reveal a safe workspace path in the file explorer/editor. */
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
   /** Configured path prefixes that should render as clickable inline path links. */
@@ -54,10 +67,15 @@ interface ChatPanelProps {
   showCommandPaletteButton?: boolean;
   /** Open the command palette from the compact composer launcher. */
   onOpenCommandPalette?: () => void;
+  /** Override reaction lookup (defaults to the session reaction overlay). */
+  reactionsForMessage?: (msg: ChatMsg) => ReactionMap | undefined;
+  /** Override reaction toggle (defaults to the session reaction overlay). */
+  toggleMessageReaction?: (msg: ChatMsg, emoji: string) => void;
 }
 
 export interface ChatPanelHandle {
   focusInput: () => void;
+  injectText: (text: string, mode?: 'replace' | 'append') => void;
   addWorkspacePath: (path: string, kind: 'file' | 'directory', agentId?: string) => Promise<void>;
 }
 
@@ -69,13 +87,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   lastEventTimestamp = 0, currentToolDescription = null, activityLog = [],
   onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent',
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
-  onToggleMobileTopBar, isMobileTopBarHidden = false,
+  onBack, onOpenDetails, agentVariant, agentCollar, onDelete, groupSubtitle, groupMembers,
   onOpenWorkspacePath,
   pathLinkPrefixes,
   pathLinkAliases,
   onOpenBeadId,
   showCommandPaletteButton = false,
   onOpenCommandPalette,
+  reactionsForMessage: reactionsForMessageProp,
+  toggleMessageReaction: toggleMessageReactionProp,
 }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -94,6 +114,55 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   // Keep refs in sync so the observer callback always sees current values
   useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+
+  // Emoji reactions overlay (per-session, Nerve-side store).
+  const { reactionMap, toggleReaction } = useReactions();
+  const messagesRef = useRef<ChatMsg[]>(messages);
+  messagesRef.current = messages;
+  const reactionsForMessage = useCallback(
+    (msg: ChatMsg): ReactionMap | undefined => {
+      if (reactionsForMessageProp) return reactionsForMessageProp(msg);
+      const ts = msg.timestamp instanceof Date ? msg.timestamp.getTime() : NaN;
+      if (!Number.isFinite(ts)) return undefined;
+      return reactionMap[String(ts)];
+    },
+    [reactionsForMessageProp, reactionMap],
+  );
+  const handleToggleReaction = useCallback(
+    (index: number, emoji: string) => {
+      const msg = messagesRef.current[index];
+      if (!msg) return;
+      if (toggleMessageReactionProp) {
+        toggleMessageReactionProp(msg, emoji);
+        return;
+      }
+      if (msg.streaming || msg.pending) return;
+      const ts = msg.timestamp instanceof Date ? msg.timestamp.getTime() : NaN;
+      if (!Number.isFinite(ts)) return;
+      void toggleReaction(ts, emoji);
+    },
+    [toggleMessageReactionProp, toggleReaction],
+  );
+
+  // Threaded replies (quote-linked, GrokBot-style).
+  const [threadParent, setThreadParent] = useState<ChatMsg | null>(null);
+  const [threadDraft, setThreadDraft] = useState('');
+  const threadMap = useMemo(() => buildThreadMap(messages), [messages]);
+  const handleReplyInThread = useCallback((index: number) => {
+    const msg = messagesRef.current[index];
+    if (msg && !msg.streaming && !msg.pending) {
+      setThreadParent(msg);
+      setThreadDraft('');
+    }
+  }, []);
+  const threadReplies = threadParent ? threadMap.get(parentHash(threadParent)) ?? [] : [];
+  const sendThreadReply = useCallback(() => {
+    if (!threadParent) return;
+    const text = threadDraft.trim();
+    if (!text) return;
+    void onSend(`${formatReplyPrefix(threadParent)}${text}`);
+    setThreadDraft('');
+  }, [threadParent, threadDraft, onSend]);
 
   // Infinite scroll — load older messages when sentinel enters viewport
   useEffect(() => {
@@ -134,6 +203,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   // Expose focusInput to parent
   useImperativeHandle(ref, () => ({
     focusInput: () => inputBarRef.current?.focus(),
+    injectText: (text: string, mode: 'replace' | 'append' = 'append') => inputBarRef.current?.injectText(text, mode),
     addWorkspacePath: async (path: string, kind: 'file' | 'directory', agentId?: string) => {
       await inputBarRef.current?.addWorkspacePath(path, kind, agentId);
     },
@@ -288,8 +358,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         agentName={agentName}
         onToggleFileBrowser={onToggleFileBrowser}
         isFileBrowserCollapsed={isFileBrowserCollapsed}
-        onToggleMobileTopBar={onToggleMobileTopBar}
-        isMobileTopBarHidden={isMobileTopBarHidden}
+        onBack={onBack}
+        onOpenDetails={onOpenDetails}
+        agentVariant={agentVariant}
+        agentCollar={agentCollar}
+        onDelete={onDelete}
+        subtitle={groupSubtitle}
+        groupMembers={groupMembers}
       />
 
       {/* Search Bar */}
@@ -315,7 +390,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       >
         {/* Infinite scroll sentinel + "load more" indicator */}
         {hasMore && (
-          <div ref={sentinelRef} className="flex items-center justify-center py-2 text-muted-foreground/60 text-[0.667rem] tracking-widest uppercase select-none">
+          <div ref={sentinelRef} className="flex items-center justify-center py-2 text-muted-foreground/60 text-2xsst select-none">
             ↑ older messages
           </div>
         )}
@@ -340,7 +415,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
           const stableKey = msg.msgId || msg.tempId || `${msg.role}-${msg.timestamp.getTime()}-${i}`;
 
           const separator = dayLabel ? (
-            <div key={`${stableKey}-day`} className="py-3 text-center text-[0.7rem] text-muted-foreground/70 select-none">
+            <div key={`${stableKey}-day`} className="py-3 text-center text-2xs text-muted-foreground/70 select-none">
               {dayLabel}
             </div>
           ) : null;
@@ -404,6 +479,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                   pathLinkPrefixes={pathLinkPrefixes}
                   pathLinkAliases={pathLinkAliases}
                   onOpenBeadId={onOpenBeadId}
+                  reactions={reactionsForMessage(msg)}
+                  onToggleReaction={handleToggleReaction}
+                  replyCount={threadMap.get(parentHash(msg))?.length ?? 0}
+                  onReplyInThread={msg.streaming || msg.pending ? undefined : handleReplyInThread}
                 />
               </div>
             </div>
@@ -443,6 +522,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       )}
 
       {/* Input area */}
+      <ApprovalCards />
       <InputBar
         ref={inputBarRef}
         onSend={onSend}
@@ -452,6 +532,80 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         showCommandPaletteButton={showCommandPaletteButton}
         onOpenCommandPalette={onOpenCommandPalette}
       />
+
+      {/* Thread pane — replies grouped under one message */}
+      {threadParent && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-background/98 backdrop-blur-sm sm:inset-y-0 sm:left-auto sm:right-0 sm:w-[min(420px,92%)] sm:border-l sm:border-border" role="dialog" aria-modal="true" aria-label="Thread">
+          <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
+            <span className="text-base">↩</span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">Thread</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {threadReplies.length} {threadReplies.length === 1 ? 'reply' : 'replies'} · stays in the main transcript
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setThreadParent(null)}
+              aria-label="Close thread"
+              className="shell-icon-button min-h-11 min-w-11 justify-center rounded-xl"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+            <div className="rounded-2xl border border-primary/25 bg-primary/5 px-3 py-2 text-sm">
+              <div className="text-2xs font-semibold text-muted-foreground">
+                {threadParent.role === 'user' ? 'You' : agentName}
+              </div>
+              <div className="mt-1 line-clamp-6 whitespace-pre-wrap">{threadParent.rawText}</div>
+            </div>
+            {threadReplies.map((reply) => (
+              <div key={reply.tempId || reply.timestamp.getTime()} className="ml-4 mt-2 border-l-2 border-primary/30 pl-3">
+                <div className="text-2xs font-semibold text-muted-foreground">
+                  {reply.role === 'user' ? 'You' : agentName} ·{' '}
+                  {reply.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <div className="mt-0.5 whitespace-pre-wrap text-sm">
+                  {reply.rawText.replace(/^>\s*↩\s.*\n\n/, '')}
+                </div>
+              </div>
+            ))}
+            {threadReplies.length === 0 && (
+              <div className="px-2 py-6 text-center text-xs leading-5 text-muted-foreground">
+                No replies yet. Your reply goes to {agentName} with full context.
+              </div>
+            )}
+          </div>
+          <div className="border-t border-border/60 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <div className="flex items-end gap-2">
+              <textarea
+                value={threadDraft}
+                onChange={(e) => setThreadDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+                    e.preventDefault();
+                    sendThreadReply();
+                  }
+                }}
+                placeholder="Reply in thread…"
+                rows={2}
+                aria-label="Reply in thread"
+                className="cockpit-textarea min-h-11 flex-1 rounded-2xl px-3 py-2.5 text-base"
+              />
+              <button
+                type="button"
+                onClick={sendThreadReply}
+                disabled={!threadDraft.trim()}
+                aria-label="Send thread reply"
+                className="shell-icon-button min-h-11 min-w-11 shrink-0 justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-50"
+              >
+                ↑
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import CleatusLogo from '@/components/CleatusLogo';
+import KorgeLogo from '@/components/KorgeLogo';
 import { areGatewayUrlsEquivalent } from '@/lib/gatewayUrls';
 
 interface ConnectDialogProps {
@@ -66,17 +66,17 @@ export function ConnectDialog({
           <DialogHeader className="gap-3 text-left">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-primary/20 bg-background/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <CleatusLogo size={26} />
+                <KorgeLogo size={26} />
               </div>
               <div>
-                <div className="text-[0.667rem] font-medium uppercase tracking-[0.3em] text-primary/80">Gateway Handshake</div>
+                <div className="text-2xs font-medium text-primary/80">Gateway Handshake</div>
                 <DialogTitle className="mt-1 text-lg font-semibold tracking-[-0.03em] text-foreground sm:text-xl">
-                  Connect Cleatus Bot to your OpenClaw gateway
+                  Connect Korg-e Bot to your OpenClaw gateway
                 </DialogTitle>
               </div>
             </div>
             <DialogDescription className="max-w-[42ch] text-sm leading-6 text-muted-foreground">
-              Point Cleatus Bot at the gateway endpoint, provide your token when needed, and bring the cockpit online.
+              Point Korg-e Bot at the gateway endpoint, provide your token when needed, and bring your bots online.
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -84,14 +84,14 @@ export function ConnectDialog({
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 pb-[max(1.067rem,env(safe-area-inset-bottom))] sm:gap-5 sm:px-6 sm:py-6">
           <div className="hidden gap-4 sm:grid sm:grid-cols-2">
             <div className="shell-panel rounded-2xl px-4 py-3">
-              <div className="text-[0.667rem] font-medium uppercase tracking-[0.24em] text-muted-foreground">Connection</div>
+              <div className="text-2xs font-medium text-muted-foreground">Connection</div>
               <div className="mt-2 text-sm font-medium text-foreground">Secure local bridge</div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Cleatus Bot talks to your gateway over WebSocket and keeps the session state in sync live.
+                Korg-e Bot talks to your gateway over WebSocket and keeps the session state in sync live.
               </p>
             </div>
             <div className="shell-panel rounded-2xl px-4 py-3">
-              <div className="text-[0.667rem] font-medium uppercase tracking-[0.24em] text-muted-foreground">Credentials</div>
+              <div className="text-2xs font-medium text-muted-foreground">Credentials</div>
               <div className="mt-2 text-sm font-medium text-foreground">Use server auth when available</div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 The token field disappears for the official gateway URL when the server can inject credentials safely.
@@ -101,7 +101,7 @@ export function ConnectDialog({
 
           <div className="grid gap-4">
             <label className="flex flex-col gap-2">
-              <span className="text-[0.733rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+              <span className="text-xs font-medium text-muted-foreground">
                 WebSocket endpoint
               </span>
               <Input
@@ -109,12 +109,12 @@ export function ConnectDialog({
                 onChange={e => setUrl(e.target.value)}
                 spellCheck={false}
                 placeholder="ws://127.0.0.1:18789"
-                className="font-mono text-base sm:text-[0.867rem]"
+                className="font-mono text-base sm:text-sm"
               />
             </label>
             {(!serverSideAuth || !officialUrl || !areGatewayUrlsEquivalent(url, officialUrl)) && (
               <label className="flex flex-col gap-2">
-                <span className="text-[0.733rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+                <span className="text-xs font-medium text-muted-foreground">
                   Gateway token
                 </span>
                 <Input
@@ -124,7 +124,7 @@ export function ConnectDialog({
                   onKeyDown={e => e.key === 'Enter' && handleConnect()}
                   spellCheck={false}
                   placeholder="Paste the token from your gateway config"
-                  className="font-mono text-base sm:text-[0.867rem]"
+                  className="font-mono text-base sm:text-sm"
                 />
               </label>
             )}
@@ -132,13 +132,13 @@ export function ConnectDialog({
 
           <div className="mt-auto flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="max-w-[34ch] text-xs leading-5 text-muted-foreground">
-              Keep Cleatus Bot bound to localhost unless you explicitly want remote access.
+              Keep Korg-e Bot bound to localhost unless you explicitly want remote access.
             </p>
             <Button
               onClick={handleConnect}
               disabled={connecting}
               size="lg"
-              className="w-full text-[0.733rem] uppercase tracking-[0.22em] sm:w-auto sm:min-w-[220px]"
+              className="w-full text-xs sm:w-auto sm:min-w-[220px]"
             >
               {connecting ? 'Connecting…' : 'Connect to Gateway'}
             </Button>

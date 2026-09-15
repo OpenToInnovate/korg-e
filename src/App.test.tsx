@@ -282,24 +282,6 @@ vi.mock('@/features/connect/ConnectDialog', () => ({
   ConnectDialog: () => null,
 }));
 
-vi.mock('@/components/TopBar', () => ({
-  TopBar: ({
-    showKanbanView,
-    viewMode,
-  }: {
-    showKanbanView?: boolean;
-    viewMode?: string;
-  }) => {
-    topBarRenderSnapshots.push({ showKanbanView, viewMode } as { showKanbanView?: boolean; viewMode?: string });
-    return (
-      <div>
-        <div data-testid="topbar-show-kanban">{String(showKanbanView ?? true)}</div>
-        <div data-testid="topbar-view-mode">{viewMode ?? 'chat'}</div>
-      </div>
-    );
-  },
-}));
-
 vi.mock('@/components/StatusBar', () => ({
   StatusBar: () => null,
 }));
@@ -323,15 +305,6 @@ vi.mock('@/features/chat/ChatPanel', () => ({
       ? <button type="button" data-testid="chatbox-command-trigger" aria-label="Open command palette" onClick={() => props.onOpenCommandPalette?.()}>Open Commands From Composer</button>
       : null;
   }),
-}));
-
-vi.mock('@/components/ResizablePanels', () => ({
-  ResizablePanels: ({ left, right }: { left: ReactNode; right: ReactNode }) => (
-    <div>
-      <div>{left}</div>
-      <div>{right}</div>
-    </div>
-  ),
 }));
 
 vi.mock('@/components/PanelErrorBoundary', () => ({
@@ -397,6 +370,47 @@ vi.mock('@/features/workspace/WorkspacePanel', () => ({
   WorkspacePanel: () => null,
 }));
 
+vi.mock('@/features/roster/RosterSidebar', () => ({
+  RosterSidebar: ({ onSelect, onSpawn }: {
+    onSelect: (key: string) => void;
+    onSpawn?: (opts: { kind: 'root' | 'subagent'; agentName?: string; parentSessionKey?: string; task: string; model: string; thinking: string; cleanup?: string }) => Promise<void>;
+  }) => (
+    <div>
+      <button type="button" onClick={() => onSelect('agent:bravo:main')}>Select Bravo</button>
+      <button type="button" onClick={() => onSelect('agent:alpha:subagent:abc')}>Select Alpha Subagent</button>
+      {onSpawn && (
+        <button
+          type="button"
+          onClick={() => onSpawn({
+            kind: 'root',
+            agentName: 'Charlie',
+            task: 'Investigate workspace guard',
+            model: 'test-model',
+            thinking: 'medium',
+          })}
+        >
+          Spawn Root Charlie
+        </button>
+      )}
+      {onSpawn && (
+        <button
+          type="button"
+          onClick={() => onSpawn({
+            kind: 'subagent',
+            parentSessionKey: 'agent:bravo:main',
+            task: 'Help bravo',
+            model: 'test-model',
+            thinking: 'medium',
+            cleanup: 'keep',
+          })}
+        >
+          Spawn Bravo Subagent
+        </button>
+      )}
+    </div>
+  ),
+}));
+
 vi.mock('@/features/kanban/KanbanPanel', () => ({
   KanbanPanel: () => null,
 }));
@@ -432,6 +446,25 @@ beforeEach(() => {
       } as Response;
     }
 
+    if (url.includes('/api/roster')) {
+      const body = JSON.stringify({ version: 2, bots: [], groups: [], sections: [] });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => body,
+        json: async () => ({ version: 2, bots: [], groups: [], sections: [] }),
+      } as Response;
+    }
+
+    if (url.includes('/api/kanban/proposals')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ proposals: [] }),
+        json: async () => ({ proposals: [] }),
+      } as Response;
+    }
+
     return {
       ok: true,
       json: async () => ({}),
@@ -446,6 +479,8 @@ afterEach(() => {
 describe('App save toast workspace scoping', () => {
   beforeEach(() => {
     localStorage.clear();
+    // Workspace/file browser defaults to collapsed on web; these tests exercise it expanded.
+    localStorage.setItem('nerve-file-tree-collapsed', 'false');
     sessionContext.currentSession = 'agent:alpha:main';
     sessionContext.setCurrentSession.mockReset();
     sessionContext.spawnSession.mockReset();
@@ -847,13 +882,13 @@ describe('App kanban visibility gating', () => {
     topBarRenderSnapshots.length = 0;
   });
 
-  it('passes the kanban visibility flag through to the top bar', () => {
+  it('hides the Tasks toggle when kanban is not visible', () => {
     settingsContext.kanbanVisible = false;
 
     render(<App />);
 
-    expect(screen.getByTestId('topbar-show-kanban')).toHaveTextContent('false');
-    expect(topBarRenderSnapshots.at(-1)).toMatchObject({ showKanbanView: false });
+    expect(screen.queryByRole('button', { name: /^tasks$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^chat$/i })).toBeInTheDocument();
   });
 
   it('falls back to chat when kanban is persisted but hidden', () => {
@@ -862,7 +897,7 @@ describe('App kanban visibility gating', () => {
 
     render(<App />);
 
-    expect(screen.getByTestId('topbar-view-mode')).toHaveTextContent('chat');
+    expect(screen.getByRole('button', { name: /^chat$/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('opens the command palette from the chatbox trigger in desktop layout', () => {

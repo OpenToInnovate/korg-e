@@ -219,7 +219,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
           {date ? `${date} / ${title}` : title}
         </span>
         {hasChanges && (
-          <span className="text-[0.6rem] text-yellow-500 uppercase tracking-wider">
+          <span className="text-2xs text-orange">
             modified
           </span>
         )}
@@ -227,7 +227,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
 
       {/* Error display */}
       {error && (
-        <div className="px-3 py-1.5 text-[0.667rem] flex items-center gap-1.5 bg-red/10 text-red border-b border-red/20">
+        <div className="px-3 py-1.5 text-2xs flex items-center gap-1.5 bg-red/10 text-red border-b border-red/20">
           {error}
           <button
             onClick={() => setError(null)}
@@ -250,7 +250,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="flex-1 w-full bg-transparent text-[0.733rem] font-mono text-foreground px-3 py-2 resize-none focus:outline-none border-none placeholder:text-muted-foreground/50"
+            className="flex-1 w-full bg-transparent text-xs font-mono text-foreground px-3 py-2 resize-none focus:outline-none border-none placeholder:text-muted-foreground/50"
             placeholder="Enter section content..."
             disabled={isSaving}
             spellCheck={false}
@@ -261,7 +261,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
 
       {/* Footer with actions */}
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-border/40 bg-card/30">
-        <span className="text-[0.6rem] text-muted-foreground">
+        <span className="text-2xs text-muted-foreground">
           {hasChanges ? 'Ctrl+S to save • Esc to cancel' : ''}
         </span>
         <div className="flex items-center gap-1.5">
@@ -270,7 +270,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
             size="sm"
             onClick={handleCancel}
             disabled={isSaving}
-            className="h-6 px-2 text-[0.667rem] font-mono"
+            className="h-6 px-2 text-2xs font-mono"
           >
             <X size={12} className="mr-1" />
             Cancel
@@ -279,7 +279,7 @@ export function MemoryEditor({ agentId, title, date, onSave, onCancel }: MemoryE
             size="sm"
             onClick={handleSave}
             disabled={!hasChanges || isSaving || isLoading}
-            className="h-6 px-2 text-[0.667rem] font-mono bg-purple hover:bg-purple/90 text-white"
+            className="h-6 px-2 text-2xs font-mono bg-purple hover:bg-purple/90 text-white"
           >
             {isSaving ? (
               <Loader2 size={12} className="mr-1 animate-spin" />

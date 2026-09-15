@@ -16,7 +16,7 @@ export function ActivityLog({ entries, maxVisible = 4 }: ActivityLogProps) {
   const lastIdx = visible.length - 1;
 
   return (
-    <div className="flex flex-col text-[0.733rem]" style={{ fontFamily: 'var(--font-mono, monospace)', lineHeight: 1.6 }}>
+    <div className="flex flex-col text-xs" style={{ fontFamily: 'var(--font-mono, monospace)', lineHeight: 1.6 }}>
       {visible.map((entry, i) => {
         const isLast = i === lastIdx;
         const connector = isLast ? '└' : '├';
@@ -32,7 +32,7 @@ export function ActivityLog({ entries, maxVisible = 4 }: ActivityLogProps) {
             <span className="text-border select-none">{connector}</span>
             <span className={`break-all ${entry.phase === 'running' ? 'tool-line-running' : ''}`}>{entry.description}</span>
             {entry.phase === 'completed' && (
-              <span className="text-green text-[0.667rem] shrink-0">✓</span>
+              <span className="text-green text-2xs shrink-0">✓</span>
             )}
             {entry.phase === 'running' && (
               <span className="inline-flex text-green text-xs shrink-0">

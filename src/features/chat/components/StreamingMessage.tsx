@@ -43,7 +43,7 @@ export function StreamingMessage({ html, text, elapsedMs }: StreamingMessageProp
           />
         )}
         {elapsedMs > 0 && (
-          <div className="mt-1 text-right font-mono text-[0.625rem] tabular-nums text-muted-foreground/60">
+          <div className="mt-1 text-right font-mono text-2xs tabular-nums text-muted-foreground/60">
             {formatElapsed(elapsedMs)}
           </div>
         )}

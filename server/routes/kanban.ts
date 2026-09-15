@@ -28,6 +28,7 @@ import {
 import { InvalidKanbanAssigneeError, resolveKanbanAssigneeRootSessionKey } from '../lib/kanban-assignee.js';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
 import { gatewayRpcCall } from '../lib/gateway-rpc.js';
+import { listAutoReviewRules, evaluateAutoReview, approvalCovers } from '../lib/autoreview-store.js';
 import { withMutex } from '../lib/mutex.js';
 import { parseKanbanMarkers, stripKanbanMarkers } from '../lib/parseMarkers.js';
 import {
@@ -155,6 +156,16 @@ class KanbanExecutionPreflightError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'KanbanExecutionPreflightError';
+  }
+}
+
+/** Thrown when Auto Review require-rules match without an approve-once. */
+class AutoReviewBlockedError extends Error {
+  rules: Array<{ id: string; pattern: string }>;
+  constructor(rules: Array<{ id: string; pattern: string }>) {
+    super(`Auto Review requires approval for: ${rules.map((r) => `"${r.pattern}"`).join(', ')}`);
+    this.name = 'AutoReviewBlockedError';
+    this.rules = rules;
   }
 }
 
@@ -704,6 +715,8 @@ const rejectProposalSchema = z.object({
 const executeSchema = z.object({
   model: z.string().max(200).optional(),
   thinking: thinkingSchema.optional(),
+  /** Approve-once for matched Auto Review require-rules. */
+  approveRules: z.array(z.string().max(100)).max(100).optional(),
 });
 
 const approveSchema = z.object({
@@ -1163,6 +1176,20 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
         return { duplicate: true } as const;
       }
 
+      // Auto Review gate: require-rules stop execution without approve-once.
+      const autoReviewRules = await listAutoReviewRules();
+      if (autoReviewRules.length > 0) {
+        const verdict = evaluateAutoReview(
+          autoReviewRules,
+          `${existing.title}\n${existing.description ?? ''}`,
+        );
+        if (!approvalCovers(verdict, parsed.data.approveRules)) {
+          throw new AutoReviewBlockedError(
+            verdict.matchedRequire.map((r) => ({ id: r.id, pattern: r.pattern })),
+          );
+        }
+      }
+
       const assignedParentSessionKey = resolveKanbanAssigneeRootSessionKey(existing.assignee);
       if (assignedParentSessionKey) {
         const recentSessionsResponse = await gatewayRpcCall('sessions.list', {
@@ -1383,6 +1410,9 @@ Deliver your result as a clear summary of what was done.`,
 
     return c.json(execution.task);
   } catch (err) {
+    if (err instanceof AutoReviewBlockedError) {
+      return c.json({ error: 'approval_required', details: err.message, rules: err.rules }, 409);
+    }
     if (err instanceof KanbanExecutionPreflightError) {
       return c.json({ error: 'invalid_execution_target', details: err.message }, 409);
     }

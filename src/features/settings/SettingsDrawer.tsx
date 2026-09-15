@@ -1,8 +1,9 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { X, Settings, LogOut, Mic, Monitor, Shield } from 'lucide-react';
+import { X, Settings, LogOut, Mic, Monitor, Shield, Hand } from 'lucide-react';
 import { ConnectionSettings } from './ConnectionSettings';
 import { AudioSettings } from './AudioSettings';
 import { AppearanceSettings } from './AppearanceSettings';
+import { AutoReviewSettings } from './AutoReviewSettings';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { STTInputMode, STTProvider } from '@/contexts/SettingsContext';
 
@@ -42,7 +43,7 @@ interface SettingsDrawerProps {
   gatewayRestarting?: boolean;
 }
 
-type SettingsCategory = 'advanced' | 'audio' | 'appearance';
+type SettingsCategory = 'advanced' | 'audio' | 'appearance' | 'review';
 type LegacySettingsCategory = SettingsCategory | 'audio-input' | 'voice-output';
 
 const SETTINGS_CATEGORY_KEY = 'nerve:settings-category';
@@ -51,7 +52,7 @@ function normalizeSavedCategory(value: string | null): SettingsCategory | null {
   const raw = value as LegacySettingsCategory | null;
   if (!raw) return null;
   if (raw === 'audio-input' || raw === 'voice-output') return 'audio';
-  if (raw === 'advanced' || raw === 'audio' || raw === 'appearance') return raw;
+  if (raw === 'advanced' || raw === 'audio' || raw === 'appearance' || raw === 'review') return raw;
   return null;
 }
 
@@ -59,6 +60,7 @@ const SETTINGS_CATEGORIES = [
   { key: 'advanced', label: 'Connection', icon: Shield },
   { key: 'audio', label: 'Audio', icon: Mic },
   { key: 'appearance', label: 'Appearance', icon: Monitor },
+  { key: 'review', label: 'Auto Review', icon: Hand },
 ] as const satisfies ReadonlyArray<{ key: SettingsCategory; label: string; icon: typeof Mic }>;
 
 /** Slide-in drawer containing connection, audio, and appearance settings. */
@@ -210,7 +212,7 @@ export function SettingsDrawer({
                     disabled={disabled}
                     onClick={() => setActiveCategory(category.key)}
                     data-active={isActive}
-                    className={`shell-chip min-h-11 min-w-[calc(50%-0.25rem)] flex-1 justify-center whitespace-nowrap px-3.5 text-[0.8rem] font-medium sm:min-h-10 sm:min-w-0 sm:flex-none sm:justify-start ${disabled ? 'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-border/80 hover:text-muted-foreground' : ''}`}
+                    className={`shell-chip min-h-11 min-w-[calc(50%-0.25rem)] flex-1 justify-center whitespace-nowrap px-3.5 text-xs font-medium sm:min-h-10 sm:min-w-0 sm:flex-none sm:justify-start ${disabled ? 'cursor-not-allowed opacity-45 hover:translate-y-0 hover:border-border/80 hover:text-muted-foreground' : ''}`}
                   >
                       <Icon size={12} aria-hidden="true" />
                     <span>{category.label}</span>
@@ -246,6 +248,8 @@ export function SettingsDrawer({
 
             {currentCategory === 'appearance' && <AppearanceSettings />}
 
+            {currentCategory === 'review' && <AutoReviewSettings />}
+
             {currentCategory === 'advanced' && (
               <ConnectionSettings
                 url={gatewayUrl}
@@ -273,9 +277,9 @@ export function SettingsDrawer({
               Sign Out
             </button>
           )}
-          <div className="flex items-center justify-between gap-3 px-1 text-[0.733rem] text-muted-foreground/70">
-            <span>Cleatus Bot</span>
-            <span className="font-mono text-[0.667rem] tracking-[0.08em]">v{__APP_VERSION__}</span>
+          <div className="flex items-center justify-between gap-3 px-1 text-xs text-muted-foreground/70">
+            <span>Korg-e Bot</span>
+            <span className="font-mono text-2xs">v{__APP_VERSION__}</span>
           </div>
         </div>
       </div>

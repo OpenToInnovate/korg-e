@@ -6,6 +6,8 @@ import { useTabCompletion } from '@/hooks/useTabCompletion';
 import { useInputHistory } from '@/hooks/useInputHistory';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useRoster } from '@/features/roster/useRoster';
+import KorgeAvatar from '@/components/KorgeAvatar';
 import { MAX_ATTACHMENTS } from '@/lib/constants';
 import { compressImage } from './image-compress';
 import { formatWorkspacePathAddToChat, mergeAddToChatText } from './addToChat';
@@ -176,6 +178,46 @@ function getFlatIndexFromGrouped(grouped: Map<SlashCommandCategory, SlashCommand
     flatIndex += entries[i][1].length;
   }
   return flatIndex + itemIndex;
+}
+
+interface MentionOption {
+  kind: 'bot' | 'group' | 'everyone';
+  id: string;
+  label: string;
+  detail: string;
+}
+
+/** Find an @mention token ending at the cursor (anywhere in the text). */
+function getMentionQuery(text: string, cursor: number): { query: string; start: number } | null {
+  const before = text.slice(0, cursor);
+  const match = /(^|\s)@([A-Za-z0-9_-]{0,40})$/.exec(before);
+  if (!match) return null;
+  return { query: match[2].toLowerCase(), start: before.length - match[2].length - 1 };
+}
+
+function filterMentions(
+  bots: Array<{ id: string; name: string; title: string }>,
+  groups: Array<{ id: string; name: string; memberBotIds: string[] }>,
+  query: string | null,
+): MentionOption[] {
+  if (query === null) return [];
+  const options: MentionOption[] = [];
+  if ('everyone'.startsWith(query)) {
+    options.push({ kind: 'everyone', id: '@everyone', label: '@everyone', detail: 'Notify the whole pack' });
+  }
+  for (const b of bots) {
+    const token = b.name.toLowerCase().replace(/[\s_-]+/g, '');
+    if (!query || token.startsWith(query) || b.name.toLowerCase().includes(query)) {
+      options.push({ kind: 'bot', id: b.id, label: `@${b.name}`, detail: b.title || 'Bot' });
+    }
+  }
+  for (const g of groups) {
+    const token = g.name.toLowerCase().replace(/[\s_-]+/g, '');
+    if (!query || token.startsWith(query) || g.name.toLowerCase().includes(query)) {
+      options.push({ kind: 'group', id: g.id, label: `@${g.name}`, detail: `${g.memberBotIds.length} bots` });
+    }
+  }
+  return options.slice(0, 8);
 }
 
 interface StagedAttachment {
@@ -424,6 +466,36 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const slashMenuRef = useRef<HTMLDivElement | null>(null);
   const slashOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
+  // @mentions for bots, groups, and @everyone (GrokBot-style directing)
+  const [mentionQuery, setMentionQuery] = useState<{ query: string; start: number } | null>(null);
+  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
+  const [dismissedMentionQuery, setDismissedMentionQuery] = useState<string | null>(null);
+  const mentionMenuRef = useRef<HTMLDivElement | null>(null);
+  const mentionOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const { roster: mentionRoster } = useRoster();
+  const mentionSuggestions = useMemo(
+    () => filterMentions(mentionRoster.bots, mentionRoster.groups, mentionQuery ? mentionQuery.query : null),
+    [mentionRoster.bots, mentionRoster.groups, mentionQuery],
+  );
+  const isMentionMenuOpen =
+    mentionSuggestions.length > 0 && mentionQuery !== null && mentionQuery.query !== dismissedMentionQuery;
+
+  useEffect(() => {
+    mentionOptionRefs.current.length = mentionSuggestions.length;
+  }, [mentionSuggestions.length]);
+
+  useEffect(() => {
+    if (!isMentionMenuOpen) return;
+    const menu = mentionMenuRef.current;
+    const option = mentionOptionRefs.current[selectedMentionIndex];
+    if (menu && option) {
+      const menuRect = menu.getBoundingClientRect();
+      const optionRect = option.getBoundingClientRect();
+      if (optionRect.bottom > menuRect.bottom) option.scrollIntoView({ block: 'nearest' });
+      else if (optionRect.top < menuRect.top) option.scrollIntoView({ block: 'nearest' });
+    }
+  }, [isMentionMenuOpen, selectedMentionIndex, mentionSuggestions.length]);
+
   const uploadsEnabled = isUploadsEnabled(uploadConfig);
   const attachByPathEnabled = uploadConfig.fileReferenceEnabled;
 
@@ -431,7 +503,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const inputHistory = useInputHistory();
 
   // Tab completion for session names
-  const { sessions, agentName: ctxAgentName } = useSessionContext();
+  const { sessions, agentName: ctxAgentName, currentSession } = useSessionContext();
   const { liveTranscriptionPreview, sttInputMode, sttProvider } = useSettings();
   const getSessionLabels = useMemo(() => {
     // Build a closure that returns current session labels
@@ -448,6 +520,60 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   }, [sessions, ctxAgentName]);
 
   const { handleKeyDown: handleTabKey, reset: resetTabCompletion } = useTabCompletion(getSessionLabels, inputRef);
+
+  // ── Per-conversation drafts (GrokBot parity: drafts survive navigation) ──
+  const draftSessionRef = useRef<string>(currentSession);
+  const draftTextRef = useRef<string>(draftText);
+  draftTextRef.current = draftText;
+  const justSwitchedRef = useRef(false);
+  const draftMountedRef = useRef(false);
+
+  const readStoredDraft = (key: string): string => {
+    try {
+      return localStorage.getItem(`korge:draft:${key}`) ?? '';
+    } catch {
+      return '';
+    }
+  };
+  const writeStoredDraft = (key: string, text: string) => {
+    try {
+      if (text) localStorage.setItem(`korge:draft:${key}`, text);
+      else localStorage.removeItem(`korge:draft:${key}`);
+    } catch {
+      // storage unavailable — drafts stay in memory only
+    }
+  };
+
+  // On first mount, restore a stored draft when the in-memory snapshot is empty.
+  useEffect(() => {
+    if (draftMountedRef.current) return;
+    draftMountedRef.current = true;
+    if (!draftTextRef.current && currentSession) {
+      const stored = readStoredDraft(currentSession);
+      if (stored) setDraftText(stored);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On conversation switch: stash the outgoing draft, load the incoming one.
+  useEffect(() => {
+    const prev = draftSessionRef.current;
+    if (prev !== currentSession) {
+      writeStoredDraft(prev, draftTextRef.current);
+      setDraftText(readStoredDraft(currentSession));
+      draftSessionRef.current = currentSession;
+      justSwitchedRef.current = true;
+    }
+  }, [currentSession]);
+
+  // Persist the draft as it changes (skipped once right after a switch).
+  useEffect(() => {
+    if (justSwitchedRef.current) {
+      justSwitchedRef.current = false;
+      return;
+    }
+    writeStoredDraft(draftSessionRef.current, draftText);
+  }, [draftText]);
 
   const slashSuggestions = useMemo(
     () => filterSlashCommands(slashCommandQuery),
@@ -618,6 +744,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setSlashCommandQuery(nextQuery);
     if (nextQuery === null) setDismissedSlashQuery(null);
     setSelectedSlashIndex(0);
+    const nextMention = getMentionQuery(input.value, input.selectionStart ?? input.value.length);
+    setMentionQuery(nextMention);
+    if (nextMention === null) setDismissedMentionQuery(null);
+    setSelectedMentionIndex(0);
   }, []);
 
   const injectComposerText = useCallback((text: string, mode: 'replace' | 'append' = 'append') => {
@@ -1225,6 +1355,14 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         input.style.height = 'auto';
       }
       setDraftText('');
+      try {
+        localStorage.removeItem(`korge:draft:${draftSessionRef.current}`);
+      } catch {
+        // storage unavailable — nothing to clear
+      }
+      setMentionQuery(null);
+      setDismissedMentionQuery(null);
+      setSelectedMentionIndex(0);
       setSlashCommandQuery(null);
       setDismissedSlashQuery(null);
       setSelectedSlashIndex(0);
@@ -1254,6 +1392,26 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     clearVoiceError,
   ]);
 
+  const applyMention = useCallback((option: MentionOption) => {
+    const input = inputRef.current;
+    if (!input || !mentionQuery) return;
+    const cursor = input.selectionStart ?? input.value.length;
+    const before = input.value.slice(0, mentionQuery.start);
+    const after = input.value.slice(cursor);
+    const insert = `${option.label} `;
+    input.value = `${before}${insert}${after}`;
+    const nextCursor = before.length + insert.length;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+    input.focus();
+    input.setSelectionRange(nextCursor, nextCursor);
+    setDraftText(input.value);
+    setMentionQuery(null);
+    setDismissedMentionQuery(null);
+    setSelectedMentionIndex(0);
+    syncSlashStateFromInput(input);
+  }, [mentionQuery, syncSlashStateFromInput]);
+
   const applySlashCommand = useCallback((option: SlashCommandOption) => {
     const input = inputRef.current;
     if (!input) return;
@@ -1273,6 +1431,32 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     // fire keydown for Enter/Escape/etc.  Let the IME handle them – acting
     // on these events causes ghost messages (issue #65).
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+
+    // @mention menu keyboard handling (takes precedence when open)
+    if (isMentionMenuOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedMentionIndex((index) => (index + 1) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedMentionIndex((index) => (index - 1 + mentionSuggestions.length) % mentionSuggestions.length);
+        return;
+      }
+      // Only autocomplete on plain Enter/Tab (no modifiers) to preserve send shortcuts
+      if ((e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey) || (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.shiftKey)) {
+        e.preventDefault();
+        applyMention(mentionSuggestions[selectedMentionIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissedMentionQuery(mentionQuery?.query ?? null);
+        setSelectedMentionIndex(0);
+        return;
+      }
+    }
 
     // Slash command menu keyboard handling
     if (isSlashMenuOpen) {
@@ -1430,7 +1614,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 <div key={item.id} className="relative group border border-border rounded px-2 py-1.5 bg-background min-w-[190px] max-w-[260px]">
                   <button
                     onClick={() => removeStagedAttachment(item.id)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] opacity-80 hover:opacity-100 cursor-pointer"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red text-white rounded-full flex items-center justify-center text-2xs opacity-80 hover:opacity-100 cursor-pointer"
                   >
                     <X size={10} />
                   </button>
@@ -1444,12 +1628,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="text-[11px] truncate">{item.file.name}</div>
-                      <div className="text-[10px] text-muted-foreground">{formatFileSize(item.file.size)}</div>
+                      <div className="text-2xs truncate">{item.file.name}</div>
+                      <div className="text-2xs text-muted-foreground">{formatFileSize(item.file.size)}</div>
                       {showRelativePath && (
-                        <div className="text-[9px] mt-0.5 truncate text-muted-foreground">{item.relativePath}</div>
+                        <div className="text-2xs mt-0.5 truncate text-muted-foreground">{item.relativePath}</div>
                       )}
-                      <div className="text-[9px] mt-0.5 text-primary/90 uppercase">{item.origin === 'server_path' ? 'Local File' : 'Upload'}</div>
+                      <div className="text-2xs mt-0.5 text-primary/90">{item.origin === 'server_path' ? 'Local File' : 'Upload'}</div>
                     </div>
                   </div>
 
@@ -1460,7 +1644,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         </div>
       )}
       {attachmentError && (
-        <div className="px-4 pb-1.5 text-[10px] text-destructive bg-card">{attachmentError}</div>
+        <div className="px-4 pb-1.5 text-2xs text-destructive bg-card">{attachmentError}</div>
       )}
       <input
         ref={fileInputRef}
@@ -1472,15 +1656,15 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       />
       {/* Input row — Grok-style pill composer */}
       <div
-        className={`grok-composer relative flex items-center gap-1 shrink-0 mx-3 mb-2 mt-1 rounded-[26px] border bg-card px-2 py-1.5 focus-within:border-primary/60 ${voiceState === 'recording' ? 'border-red-500' : 'border-border'}`}
+        className={`grok-composer glass relative flex items-center gap-1 shrink-0 mx-3 mb-2 mt-1 rounded-[26px] px-2 py-1.5 focus-within:ring-2 focus-within:ring-primary/40 ${voiceState === 'recording' ? 'ring-2 ring-red/70' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
         {voiceState === 'recording' ? (
           <span className="self-start pl-3.5 pt-3 shrink-0 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <Mic size={14} className="text-red-500" />
+            <span className="w-2 h-2 rounded-full bg-red animate-pulse" />
+            <Mic size={14} className="text-red" />
           </span>
         ) : voiceState === 'transcribing' ? (
           <span className="self-start pl-3.5 pt-3 shrink-0 flex items-center gap-1.5">
@@ -1492,7 +1676,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             type="button"
             onClick={openUploadFilesPicker}
             disabled={!uploadsEnabled}
-            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xl leading-none text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="shrink-0 h-11 w-11 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xl leading-none text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
             aria-label={uploadsEnabled ? 'Attach files' : 'Uploads disabled by configuration'}
           >
@@ -1504,12 +1688,51 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             set input.value directly, which is safe without a `value` prop.
             Do NOT add a `value={state}` prop without also passing a
             setValue callback to useTabCompletion. */}
+        {isMentionMenuOpen && (
+          <div className="glass-strong animate-menu-in absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-3xl">
+            <div ref={mentionMenuRef} role="listbox" aria-label="Mentions" className="max-h-64 overflow-y-auto p-2">
+              <div className="px-3 py-1 text-2xs font-semibold text-muted-foreground/80">
+                Direct a message <span className="text-muted-foreground/60">({mentionSuggestions.length})</span>
+              </div>
+              {mentionSuggestions.map((option, index) => {
+                const isSelected = index === selectedMentionIndex;
+                return (
+                  <button
+                    key={`${option.kind}:${option.id}`}
+                    ref={(node) => {
+                      mentionOptionRefs.current[index] = node;
+                    }}
+                    type="button"
+                    role="option"
+                    aria-label={option.label}
+                    aria-selected={isSelected}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${isSelected ? 'bg-accent text-accent-foreground' : 'text-popover-foreground hover:bg-accent/70'}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyMention(option)}
+                  >
+                    {option.kind === 'everyone' ? (
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm">📣</span>
+                    ) : option.kind === 'group' ? (
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-sm">🐾</span>
+                    ) : (
+                      <KorgeAvatar name={option.id} size={28} state="idle" />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-mono text-xs font-semibold">{option.label}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{option.detail}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {isSlashMenuOpen && (
-          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-2xl border border-border/70 bg-popover/95 shadow-[0_18px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm">
+          <div className="glass-strong animate-menu-in absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-3xl">
             <div ref={slashMenuRef} role="listbox" aria-label="Slash commands" className="max-h-64 overflow-y-auto p-2">
               {[...groupedSlashSuggestions.entries()].map(([category, commands], groupIndex) => (
                 <div key={category} className="mb-1">
-                  <div className="px-3 py-1 text-[0.6875rem] font-semibold text-muted-foreground/80">
+                  <div className="px-3 py-1 text-2xs font-semibold text-muted-foreground/80">
                     {CATEGORY_LABELS[category]} <span className="text-muted-foreground/60">({commands.length})</span>
                   </div>
                   {commands.map((option, itemIndex) => {
@@ -1529,11 +1752,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => applySlashCommand(option)}
                       >
-                        <span className="min-w-[5.5rem] font-mono text-[0.8125rem] font-semibold">
+                        <span className="min-w-[5.5rem] font-mono text-xs font-semibold">
                           {option.command}
                           {option.argumentHint && <span className="text-muted-foreground/70 ml-1">{option.argumentHint}</span>}
                         </span>
-                        <span className="text-[0.75rem] text-muted-foreground">{option.description}</span>
+                        <span className="text-xs text-muted-foreground">{option.description}</span>
                       </button>
                     );
                   })}
@@ -1550,7 +1773,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           placeholder="What do you want to know?"
           aria-label="Message input"
           rows={1}
-          className="flex-1 text-[15px] bg-transparent text-foreground border-none px-2 py-2.5 resize-none outline-none min-h-[44px] max-h-[160px] placeholder:text-muted-foreground"
+          className="flex-1 text-base bg-transparent text-foreground border-none px-2 py-2.5 resize-none outline-none min-h-[44px] max-h-[160px] placeholder:text-muted-foreground"
         />
         {showCommandPaletteButton && onOpenCommandPalette && (
           <button
@@ -1569,7 +1792,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           disabled={voiceState === 'transcribing' || voiceState === 'listening'}
           aria-label={voiceState === 'recording' ? 'Stop and transcribe' : 'Start voice input'}
           title={voiceState === 'recording' ? 'Stop and transcribe' : 'Voice input'}
-          className={`shrink-0 w-9 h-9 rounded-full border-none flex items-center justify-center cursor-pointer transition-colors ${voiceState === 'recording' ? 'bg-red text-white' : 'bg-secondary text-foreground hover:bg-accent'} ${voiceState === 'transcribing' || voiceState === 'listening' ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`shrink-0 h-11 w-11 sm:h-9 sm:w-9 rounded-full border-none flex items-center justify-center cursor-pointer transition-colors ${voiceState === 'recording' ? 'bg-red text-white' : 'bg-secondary text-foreground hover:bg-accent'} ${voiceState === 'transcribing' || voiceState === 'listening' ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           {voiceState === 'transcribing' || voiceState === 'listening' ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Mic size={16} aria-hidden="true" />}
         </button>
@@ -1578,22 +1801,28 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           disabled={isGenerating || isPreparingInline}
           aria-label={isGenerating ? 'Generating response...' : (isPreparingInline ? 'Preparing attachments...' : 'Send message')}
           aria-busy={isGenerating || isPreparingInline}
-          className={`send-btn grok-send shrink-0 w-9 h-9 rounded-full bg-primary text-primary-foreground border-none text-sm cursor-pointer font-bold flex items-center justify-center transition-transform ${isGenerating || isPreparingInline ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
+          className={`send-btn grok-send shrink-0 h-11 w-11 sm:h-9 sm:w-9 rounded-full bg-primary text-primary-foreground border-none text-sm cursor-pointer font-bold flex items-center justify-center transition-transform ${isGenerating || isPreparingInline ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110 active:scale-95'} ${sendPulse ? 'animate-send-pulse' : ''} ${sendError ? 'animate-shake' : ''}`}
         >
           {isGenerating || isPreparingInline ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
         </button>
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground px-4 pb-2">
-        <span>
-          {voiceState === 'recording'
-            ? 'Recording… Left Shift to send · Double Left Shift to discard'
-            : voiceState === 'transcribing'
-            ? 'Transcribing…'
-            : 'Enter to send · Shift+Enter for newline · Double Left Shift for voice · ⌘K commands'}
-        </span>
+      <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-2xs text-muted-foreground px-4 pb-2">
+        {voiceState === 'recording' ? (
+          <span>Recording… tap the mic to stop</span>
+        ) : voiceState === 'transcribing' ? (
+          <span>Transcribing…</span>
+        ) : (
+          <>
+            {/* Keyboard hint only where a hover-capable pointer exists. */}
+            <span className="hidden [@media(hover:hover)]:inline">
+              Enter to send · Shift+Enter for newline · Double Left Shift for voice · ⌘K commands
+            </span>
+            <span className="[@media(hover:hover)]:hidden">Tap send · hold mic to talk · ⌘K for commands</span>
+          </>
+        )}
       </div>
       {voiceError && (
-        <div className="text-[10px] text-destructive px-4 pb-1.5 pl-10 bg-card" role="alert">
+        <div className="text-2xs text-destructive px-4 pb-1.5 pl-10 bg-card" role="alert">
           {voiceError}
         </div>
       )}
@@ -1606,7 +1835,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 space-y-3 overflow-y-auto px-6 pb-4">
-            <div className="flex flex-wrap items-center gap-1 rounded border border-border/70 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-1 rounded border border-border/70 bg-muted/30 px-2 py-1.5 text-2xs text-muted-foreground">
               <button
                 type="button"
                 onClick={() => setPathPickerCurrentDir('')}
@@ -1634,14 +1863,14 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             <div className="rounded border border-border/70">
               <div className="max-h-[320px] overflow-y-auto">
                 {pathPickerLoading ? (
-                  <div className="flex items-center justify-center gap-2 px-3 py-8 text-[12px] text-muted-foreground">
+                  <div className="flex items-center justify-center gap-2 px-3 py-8 text-2xs text-muted-foreground">
                     <Loader2 size={14} className="animate-spin" />
                     Loading files…
                   </div>
                 ) : pathPickerError ? (
-                  <div className="px-3 py-8 text-center text-[12px] text-destructive">{pathPickerError}</div>
+                  <div className="px-3 py-8 text-center text-2xs text-destructive">{pathPickerError}</div>
                 ) : pathPickerEntries.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-[12px] text-muted-foreground">No files in this directory.</div>
+                  <div className="px-3 py-8 text-center text-2xs text-muted-foreground">No files in this directory.</div>
                 ) : (
                   <div className="divide-y divide-border/60">
                     {pathPickerEntries.map((entry) => {
@@ -1658,16 +1887,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                             }
                             setPathPickerSelected(entry);
                           }}
-                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[12px] hover:bg-accent/60 ${isSelected ? 'bg-accent/70 text-accent-foreground' : ''}`}
+                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-2xs hover:bg-accent/60 ${isSelected ? 'bg-accent/70 text-accent-foreground' : ''}`}
                         >
                           <span className="flex min-w-0 items-center gap-2">
                             {entry.type === 'directory' ? <FolderOpen size={14} className="shrink-0 text-primary" /> : <FileText size={14} className="shrink-0 text-muted-foreground" />}
                             <span className="min-w-0">
                               <span className="block truncate font-medium">{entry.name}</span>
-                              <span className="block truncate text-[10px] text-muted-foreground">{entry.path}</span>
+                              <span className="block truncate text-2xs text-muted-foreground">{entry.path}</span>
                             </span>
                           </span>
-                          <span className="shrink-0 text-[10px] text-muted-foreground">{isFile ? formatFileSize(entry.size ?? 0) : 'Folder'}</span>
+                          <span className="shrink-0 text-2xs text-muted-foreground">{isFile ? formatFileSize(entry.size ?? 0) : 'Folder'}</span>
                         </button>
                       );
                     })}
@@ -1676,7 +1905,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               </div>
             </div>
 
-            <div className="rounded border border-border/70 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+            <div className="rounded border border-border/70 bg-muted/30 px-3 py-2 text-2xs text-muted-foreground">
               {pathPickerSelected
                 ? <>Selected: <span className="font-medium text-foreground">{pathPickerSelected.path}</span></>
                 : 'Select a file to attach it as a server path reference.'}
@@ -1692,7 +1921,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 setPathPickerCurrentDir(parent);
               }}
               disabled={!pathPickerCurrentDir || pathPickerLoading}
-              className="rounded border border-border px-3 py-1.5 text-[11px] text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded border border-border px-3 py-1.5 text-2xs text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               Up
             </button>
@@ -1700,7 +1929,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               type="button"
               onClick={() => { void loadPathPickerDirectory(pathPickerCurrentDir); }}
               disabled={pathPickerLoading}
-              className="rounded border border-border px-3 py-1.5 text-[11px] text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded border border-border px-3 py-1.5 text-2xs text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               Refresh
             </button>
@@ -1708,7 +1937,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               type="button"
               onClick={() => { void attachSelectedServerPath(); }}
               disabled={!pathPickerSelected || pathPickerLoading}
-              className="rounded bg-primary px-3 py-1.5 text-[11px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded bg-primary px-3 py-1.5 text-2xs font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               Attach selected path
             </button>

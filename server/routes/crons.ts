@@ -18,6 +18,7 @@ import { config } from '../lib/config.js';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
 import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
+import { listAutoReviewRules, evaluateAutoReview, approvalCovers } from '../lib/autoreview-store.js';
 
 // Gateway 2026.9.2 requires agent-run context for the `cron` HTTP tool
 // ("trusted operational run instance"), so cron routes go through the
@@ -364,12 +365,37 @@ app.post('/api/crons/:id/toggle', rateLimitGeneral, async (c) => {
 
 app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
   const id = c.req.param('id');
+  let approveRules: string[] | undefined;
+  try {
+    const text = await c.req.text();
+    if (text) {
+      const body = JSON.parse(text) as { approveRules?: string[] };
+      if (Array.isArray(body.approveRules)) approveRules = body.approveRules;
+    }
+  } catch { /* body optional */ }
   try {
     const listResult = await cronRpc('list', {
       includeDisabled: true,
     }, GATEWAY_RUN_TIMEOUT_MS) as Record<string, unknown>;
     const jobs = getCronJobsFromResult(listResult);
     const job = jobs.find((entry) => (entry.id || entry.jobId) === id);
+
+    // Auto Review gate: test runs perform real work — require approve-once
+    // when a require-rule matches the routine's name/message.
+    if (job) {
+      const payload = (job.payload ?? {}) as Record<string, unknown>;
+      const description = `${String(job.name ?? job.label ?? '')}\n${String(payload.message ?? payload.text ?? '')}`;
+      const rules = await listAutoReviewRules();
+      if (rules.length > 0 && !approvalCovers(evaluateAutoReview(rules, description), approveRules)) {
+        const verdict = evaluateAutoReview(rules, description);
+        return c.json({
+          ok: false,
+          error: 'approval_required',
+          details: `Auto Review requires approval for: ${verdict.matchedRequire.map((r) => `"${r.pattern}"`).join(', ')}`,
+          rules: verdict.matchedRequire.map((r) => ({ id: r.id, pattern: r.pattern })),
+        }, 409);
+      }
+    }
 
     if (job && isIsolatedAgentTurnCron(job)) {
       const payload = job.payload as Record<string, unknown>;

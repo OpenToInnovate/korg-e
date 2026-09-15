@@ -7,6 +7,8 @@ import { COLUMNS } from './types';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { useKanbanDragDrop } from './hooks/useKanbanDragDrop';
+import { COLUMN_LABELS } from './types';
+import { cn } from '@/lib/utils';
 
 interface KanbanBoardProps {
   tasksByStatus: (status: TaskStatus) => KanbanTask[];
@@ -53,6 +55,9 @@ export const KanbanBoard = memo(function KanbanBoard({
   boardColumns: boardColumnsProp,
 }: KanbanBoardProps) {
   const activeColumns = boardColumnsProp ?? COLUMNS;
+  // Phones show one column at a time with a switcher; desktop scrolls all columns.
+  const [mobileCol, setMobileCol] = useState<TaskStatus>(() => activeColumns[0] ?? 'todo');
+  const selectedMobileCol = activeColumns.includes(mobileCol) ? mobileCol : (activeColumns[0] ?? 'todo');
 
   /* ── Build flat task list from the tasksByStatus prop ── */
   const propTasks = useMemo(() => {
@@ -133,7 +138,7 @@ export const KanbanBoard = memo(function KanbanBoard({
         <div className="max-w-[420px] text-center">
           <p className="text-sm text-destructive font-semibold mb-2">Couldn't load tasks</p>
           <p className="text-xs text-muted-foreground mb-4">{error}</p>
-          <Button size="sm" onClick={onRetry} className="text-[0.733rem] uppercase tracking-[0.16em]">
+          <Button size="sm" onClick={onRetry} className="text-xs">
             Retry
           </Button>
         </div>
@@ -158,11 +163,11 @@ export const KanbanBoard = memo(function KanbanBoard({
       <div className="flex-1 flex items-center justify-center">
         <div className="max-w-[420px] text-center select-none">
           <LayoutGrid size={28} className="mx-auto mb-3 text-primary opacity-60" />
-          <h3 className="text-[1.067rem] font-bold text-foreground mb-1.5">No tasks yet</h3>
-          <p className="text-[0.867rem] text-muted-foreground mb-5">
+          <h3 className="text-lg font-bold text-foreground mb-1.5">No tasks yet</h3>
+          <p className="text-sm text-muted-foreground mb-5">
             Create your first task or ask an agent to propose one.
           </p>
-          <Button size="sm" onClick={onCreateTask} className="min-w-[132px] text-[0.733rem] uppercase tracking-[0.16em]">
+          <Button size="sm" onClick={onCreateTask} className="min-w-[132px] text-xs">
             Create Task
           </Button>
         </div>
@@ -180,16 +185,48 @@ export const KanbanBoard = memo(function KanbanBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="h-full overflow-x-auto">
-        <div className="flex gap-3 p-0 min-w-min h-full">
-          {activeColumns.map(status => (
-            <KanbanColumn
-              key={status}
-              status={status}
-              tasks={localTasksByStatus(status)}
-              onCardClick={onCardClick}
-            />
-          ))}
+      {/* Phone column switcher */}
+      <div className="shrink-0 overflow-x-auto px-3 pb-2 sm:hidden" role="tablist" aria-label="Board columns">
+        <div className="flex gap-1.5">
+          {activeColumns.map((status) => {
+            const isActive = status === selectedMobileCol;
+            return (
+              <button
+                key={status}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setMobileCol(status)}
+                className={cn(
+                  'shell-chip min-h-9 shrink-0 rounded-full px-3 text-xs font-semibold',
+                  isActive ? 'border-primary/50 text-primary' : 'text-muted-foreground',
+                )}
+              >
+                {COLUMN_LABELS[status] ?? status} · {localTasksByStatus(status).length}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-x-hidden sm:overflow-x-auto">
+        <div className="flex h-full gap-3 p-0 sm:min-w-min">
+          {activeColumns.map(status => {
+            const isMobileSelected = status === selectedMobileCol;
+            return (
+              <div
+                key={status}
+                className={cn('h-full min-w-0', isMobileSelected ? 'block w-full' : 'hidden sm:block')}
+              >
+                <KanbanColumn
+                  status={status}
+                  tasks={localTasksByStatus(status)}
+                  onCardClick={onCardClick}
+                  className={isMobileSelected ? 'w-full max-w-none sm:w-[320px] sm:max-w-[360px]' : undefined}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 

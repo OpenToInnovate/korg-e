@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { KanbanTask, TaskStatus, TaskPriority } from '../types';
 import { COLUMNS } from '../types';
+import { AutoReviewRequiredError, approvalRulesFromBody } from '@/features/auto-review/errors';
+
+export { AutoReviewRequiredError };
 
 /* ── API response shape ── */
 interface TasksResponse {
@@ -221,7 +224,7 @@ export function useKanban() {
 
   /* ── Workflow mutations ── */
 
-  const executeTask = useCallback(async (id: string, options?: { model?: string; thinking?: string }): Promise<KanbanTask> => {
+  const executeTask = useCallback(async (id: string, options?: { model?: string; thinking?: string; approveRules?: string[] }): Promise<KanbanTask> => {
     const res = await fetch(`/api/kanban/tasks/${encodeURIComponent(id)}/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -229,6 +232,10 @@ export function useKanban() {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      const approvalRules = approvalRulesFromBody(body);
+      if (approvalRules) {
+        throw new AutoReviewRequiredError(approvalRules, typeof body.details === 'string' ? body.details : undefined);
+      }
       throw new Error(body.details || body.error || `HTTP ${res.status}`);
     }
     const task: KanbanTask = await res.json();

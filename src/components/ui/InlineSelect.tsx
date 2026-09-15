@@ -230,7 +230,7 @@ export function InlineSelect({
             role="option"
             aria-selected={active}
             className={cn(
-              'w-full text-left px-2 py-1 text-[0.733rem] font-mono cursor-pointer sm:text-[0.667rem]',
+              'w-full text-left px-2 py-1 text-xs font-mono cursor-pointer sm:text-2xs',
               highlighted ? 'bg-secondary/80 text-foreground' : active ? 'bg-secondary text-foreground' : 'text-foreground/80',
               'hover:bg-secondary/80 hover:text-foreground'
             )}
@@ -266,7 +266,7 @@ export function InlineSelect({
         title={title}
         onClick={() => open ? close() : openWithHighlight()}
         onKeyDown={handleKeyDown}
-        className={cn('font-mono text-[0.8rem] bg-background/40 text-foreground/80 border border-border/60 px-2 py-1.5 outline-none disabled:opacity-50 disabled:cursor-not-allowed inline-flex min-h-11 items-center gap-1 min-w-0 sm:min-h-8 sm:px-1.5 sm:py-0.5 sm:text-[0.667rem]', triggerClassName)}
+        className={cn('font-mono text-xs bg-background/40 text-foreground/80 border border-border/60 px-2 py-1.5 outline-none disabled:opacity-50 disabled:cursor-not-allowed inline-flex min-h-11 items-center gap-1 min-w-0 sm:min-h-8 sm:px-1.5 sm:py-0.5 sm:text-2xs', triggerClassName)}
       >
         <span className="truncate">{displayLabel ?? selected?.label ?? value}</span>
         <span className="text-muted-foreground">▾</span>

@@ -12,7 +12,6 @@ vi.mock('./useModelEffort', () => ({
 const mockOnReset = vi.fn();
 const mockOnAbort = vi.fn();
 const mockOnToggleFileBrowser = vi.fn();
-const mockOnToggleMobileTopBar = vi.fn();
 
 const defaultMockHook = {
   modelOptions: [
@@ -73,7 +72,7 @@ describe('ChatHeader', () => {
     expect(expandButton).toHaveAttribute('title', 'Open file explorer (Ctrl+B)');
   });
 
-  it('shows the stacked mobile chrome control when top bar toggle is provided', () => {
+  it('does not render the retired stacked mobile chrome control', () => {
     const mockUseModelEffort = vi.mocked(useModelEffort);
     mockUseModelEffort.mockReturnValue(defaultMockHook);
 
@@ -84,12 +83,10 @@ describe('ChatHeader', () => {
         isGenerating={false}
         onToggleFileBrowser={mockOnToggleFileBrowser}
         isFileBrowserCollapsed={true}
-        onToggleMobileTopBar={mockOnToggleMobileTopBar}
-        isMobileTopBarHidden={false}
       />
     );
 
-    expect(screen.getByRole('button', { name: /hide header controls/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /hide header controls/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /open file explorer/i })).toBeInTheDocument();
   });
 
@@ -127,9 +124,10 @@ describe('ChatHeader', () => {
     expect(mockOnToggleFileBrowser).toHaveBeenCalledTimes(1);
   });
 
-  it('calls both mobile chrome actions when the stacked control is used', () => {
+  it('exposes reset, files, and details through the mobile overflow menu', () => {
     const mockUseModelEffort = vi.mocked(useModelEffort);
     mockUseModelEffort.mockReturnValue(defaultMockHook);
+    const onOpenDetails = vi.fn();
 
     render(
       <ChatHeader
@@ -137,17 +135,22 @@ describe('ChatHeader', () => {
         onAbort={mockOnAbort}
         isGenerating={false}
         onToggleFileBrowser={mockOnToggleFileBrowser}
-        isFileBrowserCollapsed={true}
-        onToggleMobileTopBar={mockOnToggleMobileTopBar}
-        isMobileTopBarHidden={true}
+        onOpenDetails={onOpenDetails}
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /show header controls/i }));
-    fireEvent.click(screen.getByRole('button', { name: /open file explorer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /conversation options/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Bot details' }));
+    expect(onOpenDetails).toHaveBeenCalledTimes(1);
 
-    expect(mockOnToggleMobileTopBar).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /conversation options/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^files$/i }));
     expect(mockOnToggleFileBrowser).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /conversation options/i }));
+    const resetRows = screen.getAllByRole('button', { name: 'Reset session' });
+    fireEvent.click(resetRows[resetRows.length - 1]);
+    expect(mockOnReset).toHaveBeenCalledTimes(1);
   });
 
   it('shows a truthful error and disables the model selector when no configured models are available', () => {

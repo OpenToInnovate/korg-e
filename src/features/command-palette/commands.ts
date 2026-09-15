@@ -24,27 +24,20 @@ export interface CommandActions {
   onRefreshMemory: () => void;
   onSetViewMode?: (mode: ViewMode) => void;
   canShowKanban?: boolean;
+  /** Jump to a session (roster bots / groups). */
+  onSelectSession?: (key: string) => void;
+  /** Roster entries for global search: bots and groups. */
+  botEntries?: Array<{ id: string; label: string; detail: string; sessionKey?: string }>;
+  groupEntries?: Array<{ id: string; label: string; detail: string; sessionKey?: string }>;
 }
 
 const THEME_LABELS: Record<ThemeName, string> = {
-  'grok': 'Grok Dark',
-  'midnight': 'Midnight',
-  'light': 'Light',
-  'phosphor': 'Phosphor',
-  'dracula': 'Dracula',
-  'nord': 'Nord',
-  'solarized-dark': 'Solarized Dark',
-  'catppuccin-mocha': 'Catppuccin Mocha',
-  'tokyo-night': 'Tokyo Night',
-  'gruvbox-dark': 'Gruvbox Dark',
-  'one-dark': 'One Dark',
-  'monokai': 'Monokai',
-  'ayu-dark': 'Ayu Dark',
-  'rose-pine': 'Rosé Pine',
-  'monochrome': 'Monochrome',
+  'corgi': 'Dark',
+  'corgi-light': 'Light',
 };
 
 const FONT_LABELS: Record<FontName, string> = {
+  'system': 'System',
   'inter': 'Inter',
   'instrument-sans': 'Instrument Sans',
   'space-grotesk': 'Space Grotesk',
@@ -193,8 +186,7 @@ export function createCommands(actions: CommandActions): Command[] {
       keywords: ['wake', 'voice', 'microphone', 'hey'],
     },
     // Kanban commands
-    ...(actions.onSetViewMode && actions.canShowKanban !== false ? [
-      {
+    ...(actions.onSetViewMode && actions.canShowKanban !== false ? [      {
         id: 'open-kanban',
         label: 'Open Tasks View',
         action: () => actions.onSetViewMode!('kanban'),
@@ -215,6 +207,27 @@ export function createCommands(actions: CommandActions): Command[] {
         category: 'kanban' as const,
         keywords: ['kanban', 'task', 'create', 'new', 'add'],
       },
+    ] : []),
+    // Roster: jump to bots and groups (global search parity)
+    ...((actions.onSelectSession && (actions.botEntries?.length || actions.groupEntries?.length)) ? [
+      ...(actions.botEntries ?? [])
+        .filter((b) => b.sessionKey)
+        .map((b) => ({
+          id: `bot-${b.id}`,
+          label: `Bot: ${b.label}`,
+          action: () => actions.onSelectSession!(b.sessionKey!),
+          category: 'navigation' as const,
+          keywords: ['bot', 'agent', 'chat', b.label.toLowerCase(), ...(b.detail ? [b.detail.toLowerCase()] : [])],
+        })),
+      ...(actions.groupEntries ?? [])
+        .filter((g) => g.sessionKey)
+        .map((g) => ({
+          id: `group-${g.id}`,
+          label: `Group: ${g.label}`,
+          action: () => actions.onSelectSession!(g.sessionKey!),
+          category: 'navigation' as const,
+          keywords: ['group', 'pack', 'team', 'chat', g.label.toLowerCase(), ...(g.detail ? [g.detail.toLowerCase()] : [])],
+        })),
     ] : []),
     ...themeCommands,
     ...fontCommands,

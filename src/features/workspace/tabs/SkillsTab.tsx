@@ -1,10 +1,16 @@
 /**
- * SkillsTab — Browse installed skills and their status.
+ * SkillsTab — Plugins browser (Marketplace + Yours) with per-bot enablement.
+ *
+ * Installed skills come from the gateway; the linked Korg-e bot profile
+ * controls which skills are enabled for the current bot.
  */
 
-import { useState, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { RefreshCw, Circle, ExternalLink, ChevronDown, ChevronRight, Puzzle } from 'lucide-react';
 import { useSkills, type Skill, type SkillMissing } from '../hooks/useSkills';
+import { useRoster } from '@/features/roster/useRoster';
+import { MarketplaceBrowser } from '@/features/marketplace/MarketplaceBrowser';
+import { Switch } from '@/components/ui/switch';
 
 /** Format missing requirements into a human-readable string. */
 function formatMissing(missing: SkillMissing): string {
@@ -27,7 +33,7 @@ function sourceColor(source: string): string {
   }
 }
 
-function SkillRow({ skill }: { skill: Skill }) {
+function SkillRow({ skill, enabled, onToggleEnabled }: { skill: Skill; enabled?: boolean; onToggleEnabled?: (on: boolean) => void }) {
   const [expanded, setExpanded] = useState(false);
   const hasMissing = !skill.eligible && skill.missing && formatMissing(skill.missing);
 
@@ -50,30 +56,37 @@ function SkillRow({ skill }: { skill: Skill }) {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            {skill.emoji && <span className="text-[0.733rem]">{skill.emoji}</span>}
-            <span className="text-[0.733rem] text-foreground leading-tight truncate font-medium">
+            {skill.emoji && <span className="text-xs">{skill.emoji}</span>}
+            <span className="text-xs text-foreground leading-tight truncate font-medium">
               {skill.name}
             </span>
             {/* Source badge */}
-            <span className={`text-[0.6rem] px-1 py-px rounded-sm leading-tight ${sourceColor(skill.source)}`}>
+            <span className={`text-2xs px-1 py-px rounded-sm leading-tight ${sourceColor(skill.source)}`}>
               {skill.source}
             </span>
           </div>
           {skill.description && (
-            <div className="text-[0.667rem] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">
+            <div className="text-2xs text-muted-foreground mt-0.5 line-clamp-2 leading-snug">
               {skill.description}
             </div>
           )}
           {skill.disabled && (
-            <div className="text-[0.667rem] text-muted-foreground mt-0.5 italic">Disabled</div>
+            <div className="text-2xs text-muted-foreground mt-0.5 italic">Disabled</div>
           )}
           {skill.blockedByAllowlist && (
-            <div className="text-[0.667rem] text-muted-foreground mt-0.5 italic">Blocked by allowlist</div>
+            <div className="text-2xs text-muted-foreground mt-0.5 italic">Blocked by allowlist</div>
           )}
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-1 flex-shrink-0">
+          {onToggleEnabled && skill.eligible && (
+            <Switch
+              checked={enabled ?? true}
+              onCheckedChange={onToggleEnabled}
+              aria-label={`Enable ${skill.name} for this bot`}
+            />
+          )}
           {skill.homepage && (
             <a
               href={skill.homepage}
@@ -101,7 +114,7 @@ function SkillRow({ skill }: { skill: Skill }) {
       {/* Expanded missing requirements */}
       {expanded && hasMissing && (
         <div className="px-3 pb-2 pl-8">
-          <div className="text-[0.667rem] text-muted-foreground">
+          <div className="text-2xs text-muted-foreground">
             <span className="text-red/70">Missing:</span>{' '}
             {formatMissing(skill.missing!)}
           </div>
@@ -115,31 +128,93 @@ interface SkillsTabProps {
   agentId: string;
 }
 
-/** Workspace tab listing installed skills and flagging missing dependencies. */
+/** Workspace tab: Plugins marketplace + private skills with per-bot enablement. */
 export function SkillsTab({ agentId }: SkillsTabProps) {
   const { skills, isLoading, error, refresh } = useSkills(agentId);
+  const { roster, updateBot } = useRoster();
   const [showUnavailable, setShowUnavailable] = useState(false);
+  const [showMarketplace, setShowMarketplace] = useState(true);
+  const [view, setView] = useState<'installed' | 'discover'>('installed');
 
-  const eligibleSkills = skills.filter(s => s.eligible);
-  const unavailableSkills = skills.filter(s => !s.eligible);
-  const eligibleCount = eligibleSkills.length;
-  const totalCount = skills.length;
+  // Bot profile linked to this workspace agent (root session key match).
+  const rootKey = `agent:${agentId}:main`;
+  const linkedBot = useMemo(
+    () => roster.bots.find((b) => b.agentId === rootKey),
+    [roster.bots, rootKey],
+  );
+
+  const eligibleSkills = useMemo(() => skills.filter(s => s.eligible), [skills]);
+  const unavailableSkills = useMemo(() => skills.filter(s => !s.eligible), [skills]);
+  const marketplace = useMemo(() => eligibleSkills.filter(s => s.source !== 'workspace'), [eligibleSkills]);
+  const yours = useMemo(() => eligibleSkills.filter(s => s.source === 'workspace'), [eligibleSkills]);
+
+  // Empty enabledSkills = everything on. Otherwise the list is the allowlist.
+  const isEnabled = useCallback(
+    (name: string) => {
+      if (!linkedBot || linkedBot.enabledSkills.length === 0) return true;
+      return linkedBot.enabledSkills.includes(name);
+    },
+    [linkedBot],
+  );
+
+  const setSkillEnabled = useCallback(
+    async (name: string, on: boolean) => {
+      if (!linkedBot) return;
+      const all = eligibleSkills.map(s => s.name);
+      let next: string[];
+      if (on) {
+        next = linkedBot.enabledSkills.includes(name)
+          ? linkedBot.enabledSkills
+          : [...linkedBot.enabledSkills, name];
+        if (next.length === all.length && all.every(n => next.includes(n))) next = [];
+      } else if (linkedBot.enabledSkills.length === 0) {
+        next = all.filter(n => n !== name);
+      } else {
+        next = linkedBot.enabledSkills.filter(n => n !== name);
+      }
+      await updateBot(linkedBot.id, { enabledSkills: next }).catch(() => undefined);
+    },
+    [linkedBot, eligibleSkills, updateBot],
+  );
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      {/* Content */}
+      {/* Installed / Discover switch */}
+      <div className="shrink-0 px-3 pt-3">
+        <div className="flex items-center gap-1 rounded-full border border-border/70 bg-[var(--surface-2)] p-1">
+          {(['installed', 'discover'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              aria-pressed={view === v}
+              className={`pressable flex-1 rounded-full py-2 text-xs font-semibold capitalize ${
+                view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {view === 'discover' ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <MarketplaceBrowser agentId={agentId} onInstalled={refresh} />
+        </div>
+      ) : (
       <div className="flex-1 overflow-y-auto">
         {/* Skills count + Refresh row */}
         {!isLoading && skills.length > 0 && (
           <div className="flex items-center border-b border-border/40">
-            <div className="flex items-center gap-2 px-3 py-1.5 text-[0.733rem] flex-1">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-xs flex-1">
               <span className="shrink-0 text-muted-foreground">
                 <Puzzle size={12} />
               </span>
               <span className="text-muted-foreground">
-                {eligibleCount} active
+                {eligibleSkills.length} active
                 {unavailableSkills.length > 0 && (
-                  <span className="text-muted-foreground/50"> / {totalCount} total</span>
+                  <span className="text-muted-foreground/50"> / {skills.length} total</span>
                 )}
               </span>
             </div>
@@ -155,10 +230,25 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
           </div>
         )}
 
+        {/* Per-bot enablement hint */}
+        {!isLoading && !linkedBot && skills.length > 0 && (
+          <div className="px-3 py-2 text-2xs leading-4 text-muted-foreground border-b border-border/40">
+            🐶 Link a bot profile to this agent (roster → Save as bot profile) to enable skills per bot.
+          </div>
+        )}
+        {!isLoading && linkedBot && (
+          <div className="px-3 py-2 text-2xs leading-4 text-muted-foreground border-b border-border/40">
+            🐶 Skills toggles apply to <span className="font-semibold text-foreground">{linkedBot.name}</span>
+            {linkedBot.enabledSkills.length > 0 && (
+              <> · {linkedBot.enabledSkills.length} of {eligibleSkills.length} on</>
+            )}.
+          </div>
+        )}
+
         {/* Error */}
         <div aria-live="polite" aria-atomic="true">
           {error && (
-            <div className="px-3 py-2 text-[0.667rem] text-red bg-red/10">{error}</div>
+            <div className="px-3 py-2 text-2xs text-red bg-red/10">{error}</div>
           )}
         </div>
 
@@ -175,14 +265,50 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
         {!isLoading && !eligibleSkills.length && !error && (
           <div className="text-muted-foreground px-3 py-8 text-center flex flex-col items-center gap-2">
             <Puzzle size={20} className="text-muted-foreground/50" />
-            <span className="text-[0.733rem]">No skills found</span>
+            <span className="text-xs">No skills found</span>
           </div>
         )}
 
-        {/* Skill rows — only eligible/ready skills */}
-        {eligibleSkills.map(skill => (
-          <SkillRow key={skill.name} skill={skill} />
-        ))}
+        {/* Yours — private workspace skills */}
+        {yours.length > 0 && (
+          <>
+            <div className="px-3 pt-2 pb-1 text-2xs font-semibold text-muted-foreground">
+              Yours ({yours.length})
+            </div>
+            {yours.map(skill => (
+              <SkillRow
+                key={skill.name}
+                skill={skill}
+                enabled={isEnabled(skill.name)}
+                onToggleEnabled={linkedBot ? (on) => void setSkillEnabled(skill.name, on) : undefined}
+              />
+            ))}
+          </>
+        )}
+
+        {/* Marketplace — bundled + shared skills */}
+        {marketplace.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowMarketplace(prev => !prev)}
+              className="w-full flex items-center gap-1.5 px-3 py-2 bg-transparent border-0 border-t border-border/40 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+              aria-expanded={showMarketplace}
+            >
+              {showMarketplace ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+              <span className="text-2xs">
+                Marketplace ({marketplace.length})
+              </span>
+            </button>
+            {showMarketplace && marketplace.map(skill => (
+              <SkillRow
+                key={skill.name}
+                skill={skill}
+                enabled={isEnabled(skill.name)}
+                onToggleEnabled={linkedBot ? (on) => void setSkillEnabled(skill.name, on) : undefined}
+              />
+            ))}
+          </>
+        )}
 
         {/* Unavailable skills — collapsible section */}
         {unavailableSkills.length > 0 && (
@@ -192,7 +318,7 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
               className="w-full flex items-center gap-1.5 px-3 py-2 bg-transparent border-0 cursor-pointer text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 rounded-sm"
             >
               {showUnavailable ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-              <span className="text-[0.667rem] uppercase tracking-wider">
+              <span className="text-2xs">
                 Unavailable ({unavailableSkills.length})
               </span>
             </button>
@@ -206,6 +332,7 @@ export function SkillsTab({ agentId }: SkillsTabProps) {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

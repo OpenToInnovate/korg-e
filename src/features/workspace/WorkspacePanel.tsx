@@ -72,7 +72,7 @@ function ConfigWithSkills({ agentId, cronWarning = null }: ConfigWithSkillsProps
           <button
             key={nextView}
             onClick={() => switchView(nextView)}
-            className={`text-[0.667rem] uppercase tracking-wider px-2 py-0.5 rounded-sm border-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
+            className={`text-2xs px-2 py-0.5 rounded-sm border-0 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-purple/50 focus-visible:ring-offset-0 ${
               view === nextView
                 ? 'bg-purple/15 text-purple font-semibold'
                 : 'bg-transparent text-muted-foreground hover:text-foreground'
@@ -193,7 +193,7 @@ export function WorkspacePanel({
         </div>
         <div className={activeTab === 'crons' ? 'h-full' : 'hidden'} hidden={activeTab !== 'crons'} role="tabpanel" id="workspace-tabpanel-crons" aria-labelledby="workspace-tab-crons">
           {visitedTabs.has('crons') && (
-            <CronsTab />
+            <CronsTab key={workspaceAgentId} agentId={workspaceAgentId} />
           )}
         </div>
         <div className={activeTab === 'config' ? 'h-full' : 'hidden'} hidden={activeTab !== 'config'} role="tabpanel" id="workspace-tabpanel-config" aria-labelledby="workspace-tab-config">

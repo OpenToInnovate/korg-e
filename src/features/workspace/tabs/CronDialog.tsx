@@ -92,12 +92,12 @@ function SectionShell({
   return (
     <section className={`cockpit-surface p-3.5 ${className}`}>
       <div className="space-y-0.5">
-        <div className="cockpit-kicker text-[0.6rem]">
+        <div className="cockpit-kicker text-2xs">
           <span className="text-primary">◆</span>
           {eyebrow}
         </div>
         <div className="text-base font-semibold tracking-[-0.03em] text-foreground">{title}</div>
-        <p className="text-[0.833rem] leading-5 text-muted-foreground">{description}</p>
+        <p className="text-sm leading-5 text-muted-foreground">{description}</p>
       </div>
       <div className="mt-3 space-y-2.5">{children}</div>
     </section>
@@ -267,7 +267,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
     if (ok) {
       handleClose();
     } else {
-      setError(`Failed to ${mode === 'edit' ? 'update' : 'create'} cron job`);
+      setError(`Failed to ${mode === 'edit' ? 'update' : 'create'} routine`);
     }
   }, [name, scheduleKind, cronExpr, cronTz, everyMs, atTime, payloadKind, effectiveTargetRootSessionKey, message, model, deliveryMode, deliveryChannel, deliveryTo, onSubmit, handleClose, mode, availableChannels.length]);
 
@@ -293,7 +293,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                 Scheduler
               </div>
               <h2 id="cron-dialog-title" className="cockpit-title text-[1.15rem]">
-                {isEdit ? 'Edit cron job' : 'Create cron job'}
+                {isEdit ? 'Edit routine' : 'Create routine'}
               </h2>
             </div>
             <button
@@ -492,7 +492,7 @@ export function CronDialog({ open, onClose, onSubmit, mode, initialData }: CronD
                 {deliveryMode === 'announce' && (
                   <div className="space-y-2.5">
                     {availableChannels.length === 0 ? (
-                      <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-[0.733rem] text-orange/85">
+                      <div className="rounded-[18px] border border-orange/30 bg-orange/6 px-3 py-3 text-xs text-orange/85">
                         No messaging channels are configured yet. Set one up in OpenClaw first, or keep the job inside Nerve.
                       </div>
                     ) : (

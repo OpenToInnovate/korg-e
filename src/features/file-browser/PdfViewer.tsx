@@ -46,7 +46,7 @@ export function PdfViewer({ file, agentId }: PdfViewerProps) {
   if (isMobileWeb) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-[#0a0a0a] px-6 text-center text-muted-foreground">
-        <AlertTriangle size={24} className="text-amber-400" />
+        <AlertTriangle size={24} className="text-orange" />
         <div className="text-sm text-foreground">PDF preview isn't supported on mobile web.</div>
         <div className="max-w-sm text-xs">
           Open the file directly for your browser's native PDF handling.

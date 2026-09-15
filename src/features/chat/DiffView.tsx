@@ -126,9 +126,9 @@ export function DiffView({ oldText, newText, filePath, language }: DiffViewProps
         <div className="diff-header">
           <span className="diff-filepath">{filePath}</span>
           <span className="diff-stats">
-            <span className="text-red-400">−{stats.removed}</span>
+            <span className="text-red">−{stats.removed}</span>
             {' / '}
-            <span className="text-green-400">+{stats.added}</span>
+            <span className="text-green">+{stats.added}</span>
           </span>
         </div>
       )}

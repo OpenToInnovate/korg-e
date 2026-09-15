@@ -7,6 +7,26 @@ import { type FontName, applyFont, fontNames } from '@/lib/fonts';
 export type STTProvider = 'local' | 'openai';
 export type STTInputMode = 'browser' | 'local' | 'hybrid';
 
+/** Appearance selector: an explicit corgi theme or Follow System. */
+export type AppearanceMode = ThemeName | 'system';
+
+const APPEARANCE_STORAGE_KEY = 'oc-appearance-mode';
+
+function resolveInitialAppearanceMode(): AppearanceMode {
+  try {
+    const saved = localStorage.getItem(APPEARANCE_STORAGE_KEY);
+    if (saved === 'system' || (saved && (themeNames as string[]).includes(saved))) {
+      return saved as AppearanceMode;
+    }
+    // Migrate legacy explicit theme choice.
+    const legacy = localStorage.getItem('oc-theme') as ThemeName | null;
+    if (legacy && (themeNames as string[]).includes(legacy)) return legacy;
+  } catch {
+    // ignore storage errors
+  }
+  return 'system';
+}
+
 interface SettingsContextValue {
   soundEnabled: boolean;
   toggleSound: () => void;
@@ -42,6 +62,8 @@ interface SettingsContextValue {
   toggleCommandPaletteButtonVisible: () => void;
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
+  appearanceMode: AppearanceMode;
+  setAppearanceMode: (mode: AppearanceMode) => void;
   font: FontName;
   setFont: (font: FontName) => void;
   fontSize: number;
@@ -53,7 +75,6 @@ interface SettingsContextValue {
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
-const FONT_REFRESH_STORAGE_KEY = 'nerve:font-refresh-20260906';
 const KANBAN_VISIBILITY_STORAGE_KEY = 'nerve:workspace:kanban-visible';
 const COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showChatboxCommandPaletteButton';
 const LEGACY_TOPBAR_COMMAND_PALETTE_BUTTON_STORAGE_KEY = 'nerve:showTopBarCommandPaletteButton';
@@ -85,28 +106,7 @@ function resolveInitialCommandPaletteButtonVisible(): boolean {
 
 function resolveInitialFont(): FontName {
   const saved = localStorage.getItem('oc-font');
-  const hasRefreshedFont = localStorage.getItem(FONT_REFRESH_STORAGE_KEY) === 'true';
-
-  if (!hasRefreshedFont) {
-    const shouldAdoptInter =
-      saved === null ||
-      saved === 'instrument-sans' ||
-      saved === 'system' ||
-      saved === 'jetbrains-mono';
-
-    localStorage.setItem(FONT_REFRESH_STORAGE_KEY, 'true');
-
-    if (shouldAdoptInter) {
-      localStorage.setItem('oc-font', 'inter');
-      return 'inter';
-    }
-
-    if (saved && fontNames.includes(saved as FontName)) {
-      return saved as FontName;
-    }
-  }
-
-  return saved && fontNames.includes(saved as FontName) ? saved as FontName : 'inter';
+  return saved && fontNames.includes(saved as FontName) ? (saved as FontName) : 'system';
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
@@ -145,10 +145,18 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return localStorage.getItem('nerve:showHiddenWorkspaceEntries') === 'true';
   });
   const [commandPaletteButtonVisible, setCommandPaletteButtonVisible] = useState(resolveInitialCommandPaletteButtonVisible);
-  const [theme, setThemeState] = useState<ThemeName>(() => {
-    const saved = localStorage.getItem('oc-theme') as ThemeName | null;
-    return saved && themeNames.includes(saved) ? saved : 'grok';
+  const [appearanceMode, setAppearanceModeState] = useState<AppearanceMode>(resolveInitialAppearanceMode);
+  const [systemDark, setSystemDark] = useState<boolean>(() => {
+    try {
+      return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : true;
+    } catch {
+      return true;
+    }
   });
+  // Resolved theme: explicit choice, or system-driven corgi pair.
+  const theme: ThemeName = appearanceMode === 'system' ? (systemDark ? 'corgi' : 'corgi-light') : appearanceMode;
   const [font, setFontState] = useState<FontName>(resolveInitialFont);
   const [fontSize, setFontSizeState] = useState<number>(() => {
     const saved = localStorage.getItem('nerve:font-size');
@@ -171,6 +179,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  // Follow the OS color scheme while appearance mode is "system".
+  useEffect(() => {
+    if (appearanceMode !== 'system') return;
+    try {
+      if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    } catch {
+      return;
+    }
+  }, [appearanceMode]);
 
   // Apply font on mount and when it changes
   useEffect(() => {
@@ -336,8 +358,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setTheme = useCallback((newTheme: ThemeName) => {
-    setThemeState(newTheme);
-    localStorage.setItem('oc-theme', newTheme);
+    setAppearanceModeState(newTheme);
+    try {
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, newTheme);
+      localStorage.setItem('oc-theme', newTheme);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const setAppearanceMode = useCallback((mode: AppearanceMode) => {
+    setAppearanceModeState(mode);
+    try {
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, mode);
+    } catch {
+      // ignore storage errors
+    }
   }, []);
 
   const setFont = useCallback((newFont: FontName) => {
@@ -400,6 +436,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     toggleCommandPaletteButtonVisible,
     theme,
     setTheme,
+    appearanceMode,
+    setAppearanceMode,
     font,
     setFont,
     fontSize,
@@ -416,7 +454,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     speak, panelRatio, setPanelRatio, telemetryVisible, toggleTelemetry,
     eventsVisible, toggleEvents, logVisible, toggleLog, showHiddenWorkspaceEntries, toggleShowHiddenWorkspaceEntries,
     commandPaletteButtonVisible, toggleCommandPaletteButtonVisible,
-    theme, setTheme, font, setFont,
+    theme, setTheme, appearanceMode, setAppearanceMode, font, setFont,
     fontSize, setFontSize, editorFontSize, setEditorFontSize, kanbanVisible, toggleKanbanVisible,
   ]);
 

@@ -4,7 +4,7 @@ import { HeartbeatPulse } from './HeartbeatPulse';
 import { ThinkingDots } from './ThinkingDots';
 import { ActivityLog } from './ActivityLog';
 import { formatElapsed } from '../utils';
-import CleatusBotAvatar from '@/components/CleatusBotAvatar';
+import KorgeAvatar from '@/components/KorgeAvatar';
 
 interface ProcessingIndicatorProps {
   stage?: ProcessingStage;
@@ -59,10 +59,10 @@ export function ProcessingIndicator({
     <div className="flex flex-col gap-2 px-4 py-3">
       {/* Row 1: heartbeat + stage label + elapsed + dots */}
       <div className="flex items-center gap-3">
-        <span className="flex items-center gap-2 text-[0.8rem] font-semibold text-foreground">
-          <CleatusBotAvatar name={agentName} size={22} state="working" />
+        <span className="flex items-center gap-2 text-xs font-semibold text-foreground">
+          <KorgeAvatar name={agentName} size={22} state="working" />
           <HeartbeatPulse lastEventTimestamp={lastEventTimestamp} stage={stage} />
-          <span className={`text-[0.667rem] ${stage === 'tool_use' ? 'text-green' : 'text-primary'}`}>◆</span>
+          <span className={`text-2xs ${stage === 'tool_use' ? 'text-green' : 'text-primary'}`}>◆</span>
           {stage === 'thinking' && (
             <span className="cockpit-badge animate-pulse" data-tone="primary">Thinking</span>
           )}
@@ -81,7 +81,7 @@ export function ProcessingIndicator({
       {/* Row 2: description line (indented to align past diamond, OpenBot shimmer while running) */}
       {descriptionText && (
         <div
-          className="tool-line-running break-all text-[0.733rem] text-muted-foreground"
+          className="tool-line-running break-all text-xs text-muted-foreground"
           style={{ paddingLeft: '2rem' }}
         >
           {descriptionText}
@@ -111,7 +111,7 @@ export function ProcessingIndicator({
       {/* Recovery status */}
       {isRecovering && (
         <div
-          className="text-primary text-[0.733rem]"
+          className="text-primary text-xs"
           style={{
             paddingLeft: '2rem',
           }}
@@ -123,7 +123,7 @@ export function ProcessingIndicator({
       {/* Stale warning */}
       {isStale && (
         <div
-          className="text-orange text-[0.733rem]"
+          className="text-orange text-xs"
           style={{
             paddingLeft: '2rem',
             animation: 'stale-pulse 2s ease-in-out infinite',

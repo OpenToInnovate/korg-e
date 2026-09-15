@@ -25,14 +25,13 @@ import { useConnectionManager } from '@/hooks/useConnectionManager';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { useGatewayRestart } from '@/hooks/useGatewayRestart';
 import { ConnectDialog } from '@/features/connect/ConnectDialog';
-import { TopBar } from '@/components/TopBar';
+import { MobileTabBar, type MobileDestination } from '@/components/MobileTabBar';
 import { StatusBar } from '@/components/StatusBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { WorkspaceSwitchDialog } from '@/components/WorkspaceSwitchDialog';
 import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { ViewMode } from '@/features/command-palette/commands';
-import { ResizablePanels } from '@/components/ResizablePanels';
 import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { createCommands } from '@/features/command-palette/commands';
@@ -40,6 +39,15 @@ import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/features/chat/chatPathLinks';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
+import { useRoster } from '@/features/roster/useRoster';
+import { isCorgiVariant } from '@/components/corgi/corgiVariants';
+import { BotDialog, type BotFormValues } from '@/features/roster/BotDialog';
+import { GroupWizard } from '@/features/roster/GroupWizard';
+import { SectionDialog } from '@/features/roster/SectionDialog';
+import type { RosterBot, RosterGroup, RosterSection } from '@/features/roster/types';
+import { ActivityFeed } from '@/features/shell/ActivityFeed';
+import { MessageSquare, LayoutGrid, PanelRightClose } from 'lucide-react';
+import { useProposals } from '@/features/kanban/hooks/useProposals';
 import { type BeadLinkTarget, type OpenBeadTab, buildBeadTabId } from '@/features/beads';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
@@ -51,7 +59,7 @@ const SettingsDrawer = lazy(() => import('@/features/settings/SettingsDrawer').t
 const CommandPalette = lazy(() => import('@/features/command-palette/CommandPalette').then(m => ({ default: m.CommandPalette })));
 
 // Lazy-loaded side panels
-const SessionList = lazy(() => import('@/features/sessions/SessionList').then(m => ({ default: m.SessionList })));
+const RosterSidebar = lazy(() => import('@/features/roster/RosterSidebar').then(m => ({ default: m.RosterSidebar })));
 const WorkspacePanel = lazy(() => import('@/features/workspace/WorkspacePanel').then(m => ({ default: m.WorkspacePanel })));
 
 // Lazy-loaded view modes
@@ -99,8 +107,7 @@ export default function App({ onLogout }: AppProps) {
   // Session state
   const {
     sessions, sessionsLoading, currentSession, setCurrentSession,
-    busyState, agentStatus, unreadSessions, refreshSessions, deleteSession, abortSession, spawnSession, renameSession,
-    agentLogEntries, eventEntries,
+    busyState, agentStatus, unreadSessions, refreshSessions, spawnSession, deleteSession,
     agentName,
   } = useSessionContext();
 
@@ -120,8 +127,6 @@ export default function App({ onLogout }: AppProps) {
     sttProvider, setSttProvider, sttInputMode, setSttInputMode, sttModel, setSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
     liveTranscriptionPreview, toggleLiveTranscriptionPreview,
-    panelRatio, setPanelRatio,
-    eventsVisible, logVisible,
     toggleEvents, toggleLog, toggleTelemetry,
     setTheme, setFont,
     kanbanVisible,
@@ -157,7 +162,7 @@ export default function App({ onLogout }: AppProps) {
       // ignore storage errors and fall back to desktop default
     }
 
-    return false;
+    return true;
   })();
 
   // File browser collapse state for mobile optimization
@@ -290,18 +295,60 @@ export default function App({ onLogout }: AppProps) {
   }, [handleFileChanged]);
 
   // Dashboard data (extracted hook) — single SSE connection handles all events
-  const { memories, memoriesLoading, tokenData, remoteWorkspace, refreshMemories } = useDashboardData({
+  const { memories, memoriesLoading, remoteWorkspace, refreshMemories } = useDashboardData({
     agentId: workspaceAgentId,
     onFileChanged,
   });
 
+  // Korg-e roster (bot profiles + group chats)
+  const roster = useRoster();
+  // Pending approvals badge for the phone tab bar.
+  const { pendingCount: pendingApprovalCount } = useProposals();
+
+  // Bot profile linked to the open conversation (drives its corgi + collar).
+  const currentBot = useMemo(
+    () => roster.roster.bots.find((b) => b.agentId && b.agentId === currentSession) ?? null,
+    [roster.roster.bots, currentSession],
+  );
+
+  // Group chat = the Alpha bot's session. Resolving it here keeps group
+  // context (title, members) separate from direct chats.
+  const currentGroup = useMemo(() => {
+    for (const g of roster.roster.groups) {
+      if (!g.alphaBotId) continue;
+      const alpha = roster.roster.bots.find((b) => b.id === g.alphaBotId);
+      if (alpha?.agentId && alpha.agentId === currentSession) {
+        const members = g.memberBotIds
+          .map((id) => roster.roster.bots.find((b) => b.id === id))
+          .filter((b): b is NonNullable<typeof b> => Boolean(b));
+        return { group: g, alpha, members };
+      }
+    }
+    return null;
+  }, [roster.roster.groups, roster.roster.bots, currentSession]);
+
+  // Delete the open bot: remove its session, then the profile (routines too).
+  const [deleteBotConfirm, setDeleteBotConfirm] = useState(false);
+  const handleDeleteCurrentBot = useCallback(async () => {
+    setDeleteBotConfirm(false);
+    if (!currentBot) return;
+    try {
+      await deleteSession(currentSession);
+    } catch { /* session may already be gone */ }
+    await roster.deleteBot(currentBot.id, true).catch(() => undefined);
+    setMobileView('home');
+  }, [currentBot, currentSession, deleteSession, roster]);
+
+  // Mobile navigation (compact layout only): home | activity, or an open chat.
+  const [mobileView, setMobileView] = useState<MobileDestination | 'chat'>('home');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [botDialog, setBotDialog] = useState<{ open: boolean; bot?: RosterBot }>({ open: false });
+  const [groupDialog, setGroupDialog] = useState<{ open: boolean; group?: RosterGroup }>({ open: false });
+  const [sectionDialog, setSectionDialog] = useState<{ open: boolean; section?: RosterSection }>({ open: false });
+
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [booted, setBooted] = useState(false);
-  const [logGlow, setLogGlow] = useState(false);
-  const [isMobileTopBarHidden, setIsMobileTopBarHidden] = useState(false);
-  const [desktopRightPanelWidth, setDesktopRightPanelWidth] = useState<number | null>(null);
-  const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
   // Gateway restart
@@ -337,6 +384,13 @@ export default function App({ onLogout }: AppProps) {
   const openTaskInBoard = useCallback((taskId: string) => {
     setPendingTaskId(taskId);
     setViewMode('kanban');
+  }, [setViewMode]);
+  /** Turn a completed task into a reusable skill: ask the bot in chat. */
+  const handleSaveTaskAsSkill = useCallback((task: { title: string; description?: string }) => {
+    setViewMode('chat');
+    const prompt = `Save the process we just used as a skill called "${task.title}". Include when to use it, required inputs and access, the sequence of work, how to validate the result, what to return, and what requires approval.${task.description ? ` Task context: ${task.description.slice(0, 500)}` : ''}`;
+    // ChatPanel stays mounted when switching views — inject on next tick.
+    setTimeout(() => chatPanelRef.current?.injectText(prompt, 'replace'), 60);
   }, [setViewMode]);
   const [chatPathLinkPrefixes, setChatPathLinkPrefixes] = useState<string[]>(
     DEFAULT_CHAT_PATH_LINKS_CONFIG.prefixes,
@@ -502,10 +556,6 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [openFile, setFileBrowserCollapsed, workspaceAgentId]);
 
-  const toggleMobileTopBar = useCallback(() => {
-    setIsMobileTopBarHidden((prev) => !prev);
-  }, []);
-
   // Build command list with stable references
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const openSearch = useCallback(() => setSearchOpen(true), []);
@@ -514,29 +564,6 @@ export default function App({ onLogout }: AppProps) {
   const closePalette = useCallback(() => setPaletteOpen(false), []);
 
   const openSpawnDialog = useCallback(() => setSpawnDialogOpen(true), []);
-
-  const commands = useMemo(() => createCommands({
-    onNewSession: openSpawnDialog,
-    onResetSession: handleReset,
-    onToggleSound: toggleSound,
-    onSettings: openSettings,
-    onSearch: openSearch,
-    onAbort: handleAbort,
-    onSetTheme: setTheme,
-    onSetFont: setFont,
-    onTtsProviderChange: setTtsProvider,
-    onToggleWakeWord: handleToggleWakeWord,
-    onToggleEvents: toggleEvents,
-    onToggleLog: toggleLog,
-    onToggleTelemetry: toggleTelemetry,
-    onOpenSettings: openSettings,
-    onRefreshSessions: refreshSessions,
-    onRefreshMemory: refreshMemories,
-    onSetViewMode: setViewMode,
-    canShowKanban: kanbanVisible,
-  }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
-    setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
-    refreshSessions, refreshMemories, setViewMode, kanbanVisible]);
 
   // Keyboard shortcut handlers with useCallback
   const handleOpenPalette = useCallback(() => setPaletteOpen(true), []);
@@ -689,6 +716,84 @@ export default function App({ onLogout }: AppProps) {
     });
   }, [currentSession, getWorkspaceSwitchLabel, requestWorkspaceTransition, sessions, spawnSession]);
 
+  // Create/edit bot profiles from the new-item flow. Creating a bot spins up a
+  // live session and links it back to the profile.
+  // Create a bot profile and (unless adopting an existing agent) spin up a session.
+  const createBotFromValues = useCallback(async (values: BotFormValues): Promise<RosterBot> => {
+    const { agentId, enabledSkills, ...profile } = values;
+    if (agentId) {
+      return roster.createBot({ ...profile, agentId, enabledSkills });
+    }
+    const bot = await roster.createBot({ ...profile, enabledSkills });
+    const task = values.description
+      ? `You are ${values.name}. ${values.description} Introduce yourself briefly and ask what to work on first.`
+      : `You are ${values.name}, a helpful teammate. Introduce yourself briefly and ask what to work on first.`;
+    try {
+      const key = buildAgentRootSessionKey(values.name, sessions.map(getSessionKey));
+      await handleSpawnSession({ kind: 'root', task, agentName: values.name });
+      await roster.updateBot(bot.id, { agentId: key }).catch(() => undefined);
+      if (isCompactLayout) setMobileView('chat');
+    } catch {
+      // Profile is saved even when the spawn fails; the user can retry from the row.
+    }
+    return bot;
+  }, [roster, sessions, handleSpawnSession, isCompactLayout]);
+
+  const handleBotDialogSave = useCallback(async (values: BotFormValues) => {
+    if (botDialog.bot) {
+      const { agentId: _a, enabledSkills: _s, ...profile } = values;
+      void _a; void _s;
+      await roster.updateBot(botDialog.bot.id, profile);
+      setBotDialog({ open: false });
+      return;
+    }
+    await createBotFromValues(values);
+    setBotDialog({ open: false });
+  }, [botDialog.bot, roster, createBotFromValues]);
+
+  // Command palette entries (roster bots/groups need handleSessionChange).
+  const rosterCommands = useMemo(() => ({
+    onSelectSession: handleSessionChange,
+    botEntries: roster.roster.bots
+      .filter((b) => b.agentId)
+      .map((b) => ({ id: b.id, label: b.name, detail: b.title || 'Bot', sessionKey: b.agentId! })),
+    groupEntries: roster.roster.groups.map((g) => {
+      const firstLinked = g.memberBotIds
+        .map((id) => roster.roster.bots.find((b) => b.id === id))
+        .find((b) => b?.agentId);
+      return {
+        id: g.id,
+        label: g.name,
+        detail: `Group · ${g.memberBotIds.length} bots`,
+        sessionKey: firstLinked?.agentId ?? undefined,
+      };
+    }),
+  }), [handleSessionChange, roster.roster.bots, roster.roster.groups]);
+
+  const commands = useMemo(() => createCommands({
+    onNewSession: openSpawnDialog,
+    onResetSession: handleReset,
+    onToggleSound: toggleSound,
+    onSettings: openSettings,
+    onSearch: openSearch,
+    onAbort: handleAbort,
+    onSetTheme: setTheme,
+    onSetFont: setFont,
+    onTtsProviderChange: setTtsProvider,
+    onToggleWakeWord: handleToggleWakeWord,
+    onToggleEvents: toggleEvents,
+    onToggleLog: toggleLog,
+    onToggleTelemetry: toggleTelemetry,
+    onOpenSettings: openSettings,
+    onRefreshSessions: refreshSessions,
+    onRefreshMemory: refreshMemories,
+    onSetViewMode: setViewMode,
+    canShowKanban: kanbanVisible,
+    ...rosterCommands,
+  }), [openSpawnDialog, handleReset, toggleSound, handleAbort, openSettings, openSearch,
+    setTheme, setFont, setTtsProvider, handleToggleWakeWord, toggleEvents, toggleLog, toggleTelemetry,
+    refreshSessions, refreshMemories, setViewMode, kanbanVisible, rosterCommands]);
+
   // Boot sequence: fade in panels when connected
   useEffect(() => {
     if (connectionState === 'connected' && !booted) {
@@ -697,24 +802,20 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [connectionState, booted]);
 
-  // Log header glow when new entries arrive
-  // This effect legitimately needs to set state in response to prop changes
-  // (visual feedback for new log entries)
+  // Unread badge in the tab title (sidebar + dock attention parity).
+  const unreadCount = useMemo(
+    () => Object.values(unreadSessions ?? {}).filter(Boolean).length,
+    [unreadSessions],
+  );
   useEffect(() => {
-    const currentCount = agentLogEntries.length;
-    if (currentCount > prevLogCount.current) {
-      setLogGlow(true);
-      const timer = setTimeout(() => setLogGlow(false), 500);
-      prevLogCount.current = currentCount;
-      return () => clearTimeout(timer);
-    }
-    prevLogCount.current = currentCount;
-  }, [agentLogEntries.length]);
+    document.title = unreadCount > 0 ? `(${unreadCount}) Korg-e Bot` : 'Korg-e Bot';
+  }, [unreadCount]);
+
 
   const handleCompactLayoutChange = useCallback((nextIsCompactLayout: boolean) => {
     setIsCompactLayout(nextIsCompactLayout);
     if (!nextIsCompactLayout) {
-      setIsMobileTopBarHidden(false);
+      setMobileView('home');
     }
     setFileBrowserCollapsedState(prevCollapsed => {
       if (nextIsCompactLayout) {
@@ -810,10 +911,20 @@ export default function App({ onLogout }: AppProps) {
             agentName={currentSessionDisplayName}
             loadMore={loadMore}
             hasMore={hasMore}
-            onToggleFileBrowser={isCompactLayout ? handleToggleFileBrowser : fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
+            onToggleFileBrowser={handleToggleFileBrowser}
             isFileBrowserCollapsed={fileBrowserCollapsed}
-            onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}
-            isMobileTopBarHidden={isMobileTopBarHidden}
+            onBack={isCompactLayout ? () => setMobileView('home') : undefined}
+            onOpenDetails={() => setDetailsOpen(true)}
+            agentVariant={currentBot && isCorgiVariant(currentBot.avatar) ? currentBot.avatar : undefined}
+            agentCollar={currentBot?.color}
+            onDelete={currentBot ? () => setDeleteBotConfirm(true) : undefined}
+            groupSubtitle={currentGroup ? `${currentGroup.group.name} · ${currentGroup.members.length + 1} bots` : undefined}
+            groupMembers={currentGroup?.members.map((m) => ({
+              id: m.id,
+              name: m.name,
+              variant: isCorgiVariant(m.avatar) ? m.avatar : undefined,
+              color: m.color,
+            }))}
             onOpenWorkspacePath={openWorkspacePath}
             pathLinkPrefixes={chatPathLinkPrefixes}
             pathLinkAliases={chatPathLinkAliases}
@@ -826,90 +937,10 @@ export default function App({ onLogout }: AppProps) {
     />
   );
 
-  const renderRightPanels = (onSelect: (key: string) => Promise<void> | void) => (
-    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
-      {/* Sessions + Memory stacked vertically */}
-      <div className="flex-1 flex flex-col gap-3 min-h-0">
-        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
-          <PanelErrorBoundary name="Sessions">
-            <SessionList
-              sessions={sessions}
-              currentSession={currentSession}
-              busyState={busyState}
-              agentStatus={agentStatus}
-              unreadSessions={unreadSessions}
-              onSelect={onSelect}
-              onRefresh={refreshSessions}
-              onDelete={deleteSession}
-              onSpawn={handleSpawnSession}
-              onRename={renameSession}
-              onAbort={abortSession}
-              isLoading={sessionsLoading}
-              agentName={agentName}
-            />
-          </PanelErrorBoundary>
-        </div>
-        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
-          <PanelErrorBoundary name="Workspace">
-            <WorkspacePanel
-              workspaceAgentId={workspaceAgentId}
-              memories={memories}
-              onRefreshMemories={refreshMemories}
-              memoriesLoading={memoriesLoading}
-              remoteWorkspace={remoteWorkspace}
-              onOpenBoard={() => setViewMode('kanban')}
-              onOpenTask={openTaskInBoard}
-            />
-          </PanelErrorBoundary>
-        </div>
-      </div>
-    </Suspense>
-  );
-
-  const compactSessionsPanel = (
-    <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading sessions…</div>}>
-      <PanelErrorBoundary name="Sessions">
-        <SessionList
-          sessions={sessions}
-          currentSession={currentSession}
-          busyState={busyState}
-          agentStatus={agentStatus}
-          unreadSessions={unreadSessions}
-          onSelect={handleSessionChange}
-          onRefresh={refreshSessions}
-          onDelete={deleteSession}
-          onSpawn={handleSpawnSession}
-          onRename={renameSession}
-          onAbort={abortSession}
-          isLoading={sessionsLoading}
-          agentName={agentName}
-          compact
-        />
-      </PanelErrorBoundary>
-    </Suspense>
-  );
-
-  const compactWorkspacePanel = (
-    <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading workspace…</div>}>
-      <PanelErrorBoundary name="Workspace">
-        <WorkspacePanel
-          workspaceAgentId={workspaceAgentId}
-          memories={memories}
-          onRefreshMemories={refreshMemories}
-          memoriesLoading={memoriesLoading}
-          remoteWorkspace={remoteWorkspace}
-          compact
-          onOpenBoard={() => setViewMode('kanban')}
-          onOpenTask={openTaskInBoard}
-        />
-      </PanelErrorBoundary>
-    </Suspense>
-  );
-
   const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
 
   return (
-    <div className="scan-lines relative h-screen flex flex-col overflow-hidden" data-booted={booted}>
+    <div className="relative h-screen flex flex-col overflow-hidden" data-booted={booted}>
       {/* Skip to main content link for keyboard navigation */}
       <a 
         href="#main-chat" 
@@ -971,24 +1002,6 @@ export default function App({ onLogout }: AppProps) {
         </button>
       )}
       
-      {(!isCompactLayout || !isMobileTopBarHidden) && (
-        <TopBar
-          onSettings={openSettings}
-          agentLogEntries={agentLogEntries}
-          tokenData={tokenData}
-          logGlow={logGlow}
-          eventEntries={eventEntries}
-          eventsVisible={eventsVisible}
-          logVisible={logVisible}
-          mobilePanelButtonsVisible={isCompactLayout}
-          sessionsPanel={compactSessionsPanel}
-          workspacePanel={compactWorkspacePanel}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          showKanbanView={kanbanVisible}
-        />
-      )}
-
       <PanelErrorBoundary name="Settings">
         <Suspense fallback={null}>
           <SettingsDrawer
@@ -1023,11 +1036,55 @@ export default function App({ onLogout }: AppProps) {
           />
         </Suspense>
       </PanelErrorBoundary>
-      
-      <div className="flex-1 flex gap-3 overflow-hidden min-h-0 px-2 pt-1.5 pb-2 sm:px-4 sm:pt-2 sm:pb-2">
-        {/* File tree — desktop inline, mobile drawer */}
-        {!isCompactLayout && (
-          <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>
+
+      {/* ── Messaging shell: Home roster · Conversation · Details ── */}
+      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden px-2 pt-1.5 pb-2 sm:px-4 sm:pt-2 sm:pb-2">
+        {/* Home / roster — sidebar on desktop, full screen on phones */}
+        <aside
+          className={`glass boot-panel flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[28px] ${
+            isCompactLayout
+              ? (mobileView === 'home' ? 'flex flex-1' : 'hidden')
+              : 'flex w-[300px] shrink-0 xl:w-[336px]'
+          }`}
+        >
+          <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading bots…</div>}>
+            <PanelErrorBoundary name="Home">
+              <RosterSidebar
+                sessions={sessions}
+                currentSession={currentSession}
+                busyState={busyState}
+                agentStatus={agentStatus}
+                unreadSessions={unreadSessions}
+                onSelect={(key) => {
+                  void handleSessionChange(key);
+                  if (isCompactLayout) setMobileView('chat');
+                }}
+                onRefresh={refreshSessions}
+                onSpawn={handleSpawnSession}
+                isLoading={sessionsLoading}
+                agentName={agentName}
+                roster={roster}
+                onNewBot={() => setBotDialog({ open: true })}
+                onNewGroup={() => setGroupDialog({ open: true })}
+                onEditBot={(bot) => setBotDialog({ open: true, bot })}
+                onEditGroup={(group) => setGroupDialog({ open: true, group })}
+                onEditSection={(section) => setSectionDialog({ open: true, section })}
+                onOpenGroupChat={(key) => {
+                  void handleSessionChange(key);
+                  if (isCompactLayout) setMobileView('chat');
+                }}
+                onOpenTasks={() => {
+                  setViewMode('kanban');
+                  if (isCompactLayout) setMobileView('chat');
+                }}
+              />
+            </PanelErrorBoundary>
+          </Suspense>
+        </aside>
+
+        {/* Desktop file explorer column */}
+        {!isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed && (
+          <aside className="glass boot-panel hidden min-h-0 w-[280px] shrink-0 overflow-hidden rounded-[28px] sm:flex">
             <PanelErrorBoundary name="File Explorer">
               <FileTreePanel
                 workspaceAgentId={workspaceAgentId}
@@ -1039,23 +1096,147 @@ export default function App({ onLogout }: AppProps) {
                 onRemapOpenPaths={remapOpenPaths}
                 onCloseOpenPaths={closeOpenPathsByPrefix}
                 isCompactLayout={false}
-                collapsed={fileBrowserCollapsed}
+                collapsed={false}
                 onCollapseChange={setFileBrowserCollapsed}
               />
             </PanelErrorBoundary>
+          </aside>
+        )}
+
+        {/* Conversation / Tasks — hidden on phones unless selected */}
+        <section
+          className={`boot-panel flex min-h-0 min-w-0 flex-1 flex-col ${
+            isCompactLayout && mobileView === 'chat' ? 'flex' : isCompactLayout ? 'hidden' : 'flex'
+          }`}
+        >
+          <div className="shell-panel flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px]">
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-border/60 px-2 py-1.5 sm:px-3">
+              <button
+                type="button"
+                onClick={() => setViewMode('chat')}
+                aria-pressed={viewMode === 'chat'}
+                className={`shell-chip min-h-9 flex-1 justify-center text-2xs sm:flex-none`}
+                data-active={viewMode === 'chat'}
+              >
+                <MessageSquare size={13} aria-hidden="true" /> Chat
+              </button>
+              {kanbanVisible && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode('kanban')}
+                  aria-pressed={viewMode === 'kanban'}
+                  className="shell-chip min-h-9 flex-1 justify-center text-2xs sm:flex-none"
+                  data-active={viewMode === 'kanban'}
+                >
+                  <LayoutGrid size={13} aria-hidden="true" /> Tasks
+                </button>
+              )}
+            </div>
+            {viewMode === 'kanban' ? (
+              <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Loading board…</div>}>
+                <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} onSaveAsSkill={handleSaveTaskAsSkill} />
+              </Suspense>
+            ) : (
+              <div className="min-h-0 flex-1 overflow-hidden">{chatContent}</div>
+            )}
+          </div>
+        </section>
+
+        {/* Desktop details column */}
+        {!isCompactLayout && detailsOpen && (
+          <aside className="glass boot-panel flex w-[336px] shrink-0 flex-col overflow-hidden rounded-[28px]">
+            <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-3 py-2">
+              <span className="t-title">Details</span>
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(false)}
+                aria-label="Close details"
+                className="shell-icon-button size-9 px-0"
+              >
+                <PanelRightClose size={16} />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading…</div>}>
+                <PanelErrorBoundary name="Details">
+                  <WorkspacePanel
+                    workspaceAgentId={workspaceAgentId}
+                    memories={memories}
+                    onRefreshMemories={refreshMemories}
+                    memoriesLoading={memoriesLoading}
+                    remoteWorkspace={remoteWorkspace}
+                    compact
+                    onOpenBoard={() => setViewMode('kanban')}
+                    onOpenTask={openTaskInBoard}
+                  />
+                </PanelErrorBoundary>
+              </Suspense>
+            </div>
+          </aside>
+        )}
+
+        {/* Phone Activity destination */}
+        {isCompactLayout && mobileView === 'activity' && (
+          <section className="shell-panel boot-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[28px]">
+            <ActivityFeed
+              sessions={sessions}
+              unreadSessions={unreadSessions}
+              onSelectSession={(key) => {
+                void handleSessionChange(key);
+                setMobileView('chat');
+              }}
+              onOpenTasks={() => {
+                setViewMode('kanban');
+                setMobileView('chat');
+              }}
+            />
+          </section>
+        )}
+
+        {/* Phone details sheet (bot profile, skills, routines, files) */}
+        {isCompactLayout && detailsOpen && (
+          <div className="glass-strong fixed inset-0 z-50 flex flex-col" role="dialog" aria-modal="true" aria-label="Bot details">
+            <div className="flex shrink-0 items-center justify-between border-b border-border/60 px-4 pb-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
+              <span className="t-title">Details</span>
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(false)}
+                aria-label="Close details"
+                className="shell-icon-button min-h-11 min-w-11 justify-center rounded-xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading…</div>}>
+                <PanelErrorBoundary name="Details">
+                  <WorkspacePanel
+                    workspaceAgentId={workspaceAgentId}
+                    memories={memories}
+                    onRefreshMemories={refreshMemories}
+                    memoriesLoading={memoriesLoading}
+                    remoteWorkspace={remoteWorkspace}
+                    compact
+                    onOpenBoard={() => { setViewMode('kanban'); setDetailsOpen(false); }}
+                    onOpenTask={(id) => { setDetailsOpen(false); openTaskInBoard(id); }}
+                  />
+                </PanelErrorBoundary>
+              </Suspense>
+            </div>
           </div>
         )}
 
+        {/* Mobile file explorer drawer (overlay) */}
         {showCompactFileBrowser && (
           <>
             <button
               type="button"
-              className="fixed inset-0 z-30 hidden bg-black/48 backdrop-blur-sm max-[900px]:block"
+              className="fixed inset-0 z-30 bg-black/48 backdrop-blur-sm"
               onClick={() => setFileBrowserCollapsed(true)}
               aria-label="Close file explorer"
             />
-            <div className={`pointer-events-none fixed inset-0 z-40 hidden px-2 pb-[4.25rem] max-[900px]:flex ${isMobileTopBarHidden ? 'pt-2' : 'pt-[4.5rem]'}`}>
-              <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full animate-in slide-in-from-left-4 duration-200">
+            <div className="pointer-events-none fixed inset-0 z-40 flex px-2 pb-[5rem] pt-2">
+              <div className="pointer-events-auto h-full w-[min(88vw,340px)] max-w-full animate-in slide-in-from-left-4 duration-200">
                 <PanelErrorBoundary name="File Explorer">
                   <FileTreePanel
                     workspaceAgentId={workspaceAgentId}
@@ -1066,7 +1247,7 @@ export default function App({ onLogout }: AppProps) {
                     revealRequest={revealRequest}
                     onRemapOpenPaths={remapOpenPaths}
                     onCloseOpenPaths={closeOpenPathsByPrefix}
-                    isCompactLayout={true}
+                    isCompactLayout={isCompactLayout}
                     collapsed={false}
                     onCollapseChange={setFileBrowserCollapsed}
                   />
@@ -1075,52 +1256,34 @@ export default function App({ onLogout }: AppProps) {
             </div>
           </>
         )}
-
-        {/*
-         * Chat panel is always rendered but hidden when kanban is active.
-         * This keeps ChatPanel → InputBar → useVoiceInput mounted so that
-         * in-progress voice recording / STT transcription survives tab switches.
-         * See: https://github.com/.../issues/64
-         */}
-        {viewMode === 'kanban' && (
-          <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
-            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
-              <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
-            </Suspense>
-          </div>
-        )}
-        {isCompactLayout ? (
-          <div className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
-            {chatContent}
-          </div>
-        ) : (
-          <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
-            <ResizablePanels
-              leftPercent={panelRatio}
-              onResize={setPanelRatio}
-              minLeftPercent={30}
-              maxLeftPercent={85}
-              rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
-              onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
-              leftClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
-              rightClassName="boot-panel flex flex-col"
-              left={chatContent}
-              right={renderRightPanels(handleSessionChange)}
-            />
-          </div>
-        )}
       </div>
 
-      {/* Status Bar */}
-      <div className="boot-panel" style={{ transitionDelay: '200ms' }}>
-        <StatusBar
-          connectionState={connectionState}
-          sessionCount={sessions.length}
-          sparkline={sparkline}
-          contextTokens={contextTokens}
-          contextLimit={contextLimit}
+      {/* Status Bar (desktop) */}
+      {!isCompactLayout && (
+        <div className="boot-panel" style={{ transitionDelay: '200ms' }}>
+          <StatusBar
+            connectionState={connectionState}
+            sessionCount={sessions.length}
+            sparkline={sparkline}
+            contextTokens={contextTokens}
+            contextLimit={contextLimit}
+          />
+        </div>
+      )}
+
+      {/* Phone bottom navigation */}
+      {isCompactLayout && (
+        <MobileTabBar
+          active={mobileView === 'activity' ? 'activity' : 'home'}
+          onHome={() => setMobileView('home')}
+          onSearch={handleOpenPalette}
+          onNew={() => setBotDialog({ open: true })}
+          onActivity={() => setMobileView('activity')}
+          onSettings={openSettings}
+          unreadCount={unreadCount}
+          activityCount={pendingApprovalCount}
         />
-      </div>
+      )}
 
       {/* Command Palette */}
       <PanelErrorBoundary name="Command Palette">
@@ -1142,6 +1305,18 @@ export default function App({ onLogout }: AppProps) {
         cancelLabel="Cancel"
         onConfirm={confirmReset}
         onCancel={cancelReset}
+        variant="danger"
+      />
+
+      {/* Delete Bot Confirmation */}
+      <ConfirmDialog
+        open={deleteBotConfirm}
+        title={`Delete ${currentBot?.name ?? 'bot'}?`}
+        message="The bot profile, its session, and its routines are removed. This cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={() => void handleDeleteCurrentBot()}
+        onCancel={() => setDeleteBotConfirm(false)}
         variant="danger"
       />
 
@@ -1173,6 +1348,82 @@ export default function App({ onLogout }: AppProps) {
         onOpenChange={setSpawnDialogOpen}
         onSpawn={handleSpawnSession}
       />
+
+      {/* Roster dialogs (new/edit bot, group, section) */}
+      {botDialog.open && (
+        <BotDialog
+          bot={botDialog.bot}
+          bots={roster.roster.bots}
+          onClose={() => setBotDialog({ open: false })}
+          onSave={handleBotDialogSave}
+          onCreateGroup={async (values) => {
+            // Group chat = Alpha session. Create the Alpha first so the group
+            // can reference it, then wire members via the API (native
+            // subagents.allowAgents delegation).
+            let alphaBotId: string | null = null;
+            if (values.alphaEnabled) {
+              const team = values.memberBotIds
+                .map((id) => {
+                  const b = roster.roster.bots.find((x) => x.id === id);
+                  if (!b) return null;
+                  // sessionKey `agent:<slug>:main` → OpenClaw agent id `<slug>`
+                  const agentSlug = b.agentId?.split(':')[1] ?? null;
+                  return agentSlug ? `${b.name} (agentId: ${agentSlug})` : b.name;
+                })
+                .filter(Boolean)
+                .join('; ');
+              const alpha = await createBotFromValues({
+                name: `${values.name} Alpha`,
+                title: 'Group coordinator',
+                description: `You coordinate the "${values.name}" group. Team roster: ${team || 'to be assigned'}. Delegate bounded tasks with sessions_spawn using the teammate's agentId, one owner per step, verify their artifacts, then report a coherent result. Never delegate further than this team, and require approval before any external action.`,
+                color: '#0A84FF',
+                avatar: 'cardigan',
+              });
+              alphaBotId = alpha.id;
+            }
+            const group = await roster.createGroup({
+              name: values.name,
+              memberBotIds: values.memberBotIds,
+              alphaBotId,
+            });
+            setBotDialog({ open: false });
+            // Open the group chat (Alpha session).
+            if (alphaBotId) {
+              const alpha = roster.roster.bots.find((b) => b.id === alphaBotId);
+              if (alpha?.agentId) {
+                await handleSessionChange(alpha.agentId);
+                if (isCompactLayout) setMobileView('chat');
+              }
+            } else {
+              void group;
+            }
+          }}
+        />
+      )}
+      {groupDialog.open && (
+        <GroupWizard
+          group={groupDialog.group}
+          bots={roster.roster.bots}
+          onClose={() => setGroupDialog({ open: false })}
+          createBot={createBotFromValues}
+          onRequestCreateBot={() => setBotDialog({ open: true })}
+          onSave={async (values) => {
+            if (groupDialog.group) await roster.updateGroup(groupDialog.group.id, values);
+            else await roster.createGroup({ name: values.name, memberBotIds: values.memberBotIds, alphaBotId: values.alphaBotId ?? null });
+            setGroupDialog({ open: false });
+          }}
+        />
+      )}
+      {sectionDialog.open && sectionDialog.section && (
+        <SectionDialog
+          section={sectionDialog.section}
+          onClose={() => setSectionDialog({ open: false })}
+          onSave={async (name) => {
+            await roster.renameSection(sectionDialog.section!.id, name);
+            setSectionDialog({ open: false });
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -787,7 +787,7 @@ export function FileTreePanel({
           }}
           onDrop={handleRootDrop}
         >
-          <span className="text-[0.667rem] font-mono font-semibold uppercase tracking-[0.26em] text-muted-foreground">
+          <span className="text-2xs font-mono font-semibold text-muted-foreground">
             {workspaceInfo?.isCustomWorkspace ? workspaceInfo.rootPath : 'Workspace'}
           </span>
           <div className="flex items-center gap-2">

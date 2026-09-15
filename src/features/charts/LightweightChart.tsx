@@ -3,7 +3,7 @@ import { createChart, ColorType, CrosshairMode, LineSeries, AreaSeries, Candlest
 import type { IChartApi } from 'lightweight-charts';
 import type { ChartData } from './extractCharts';
 
-const COLORS = ['#22c55e', '#3b82f6', '#f97316', '#8b5cf6', '#ef4444'];
+const COLORS = ['#0A84FF', '#30D158', '#FF9F0A', '#BF5AF2', '#FF453A'];
 
 export default function LightweightChart({ chart }: { chart: ChartData }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,7 +149,7 @@ export default function LightweightChart({ chart }: { chart: ChartData }) {
           {chart.title}
           {values.length > 1 && (
             <span
-              className="ml-2 inline-block rounded px-1.5 py-0.5 text-[0.667rem] font-semibold"
+              className="ml-2 inline-block rounded px-1.5 py-0.5 text-2xs font-semibold"
               style={{
                 backgroundColor: isPositive ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
                 color: isPositive ? '#22c55e' : '#ef4444',

@@ -31,16 +31,16 @@ export function MarkdownDocumentView({
     <div className="h-full flex flex-col min-h-0 bg-background/20">
       <div className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2 shrink-0 bg-card/55">
         <div className="min-w-0">
-          <div className="text-[0.733rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+          <div className="text-xs font-semibold text-muted-foreground">
             Markdown document
           </div>
-          <div className="truncate text-[0.8rem] text-foreground/90">{file.path}</div>
+          <div className="truncate text-xs text-foreground/90">{file.path}</div>
         </div>
         <div className="inline-flex items-center rounded-xl border border-border/70 bg-background/55 p-1" role="group" aria-label="Document mode">
           <button
             type="button"
             aria-pressed={mode === 'preview'}
-            className={`inline-flex min-h-8 items-center gap-2 rounded-[10px] px-3 text-[0.733rem] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+            className={`inline-flex min-h-8 items-center gap-2 rounded-[10px] px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
               mode === 'preview'
                 ? 'bg-card text-foreground shadow-[0_10px_30px_rgba(0,0,0,0.12)]'
                 : 'text-muted-foreground hover:text-foreground'
@@ -54,7 +54,7 @@ export function MarkdownDocumentView({
           <button
             type="button"
             aria-pressed={mode === 'edit'}
-            className={`inline-flex min-h-8 items-center gap-2 rounded-[10px] px-3 text-[0.733rem] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+            className={`inline-flex min-h-8 items-center gap-2 rounded-[10px] px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
               mode === 'edit'
                 ? 'bg-card text-foreground shadow-[0_10px_30px_rgba(0,0,0,0.12)]'
                 : 'text-muted-foreground hover:text-foreground'

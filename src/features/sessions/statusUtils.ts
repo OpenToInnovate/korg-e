@@ -2,8 +2,8 @@ import type { GranularAgentState } from '@/types';
 
 /** Get badge display text */
 export function getStatusBadgeText(state: GranularAgentState): string {
-  if (state.toolName) return `TOOL: ${state.toolName}`;
-  return state.status;
+  if (state.toolName) return `Tool: ${state.toolName}`;
+  return state.status.charAt(0) + state.status.slice(1).toLowerCase();
 }
 
 /** Get Tailwind classes for the status badge (uses project semantic theme tokens) */

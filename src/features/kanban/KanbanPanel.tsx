@@ -12,13 +12,15 @@ interface KanbanPanelProps {
   initialTaskId?: string | null;
   /** Called after the initial task drawer has been opened (to clear the ID). */
   onInitialTaskConsumed?: () => void;
+  /** Turn a completed task into a reusable skill (asks the bot in chat). */
+  onSaveAsSkill?: (task: KanbanTask) => void;
 }
 
 /**
  * Main Kanban panel — replaces the placeholder from Wave 1.
  * Full board with header, columns, create dialog, and detail drawer.
  */
-export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPanelProps = {}) {
+export function KanbanPanel({ initialTaskId, onInitialTaskConsumed, onSaveAsSkill }: KanbanPanelProps = {}) {
   const {
     tasks,
     loading,
@@ -140,6 +142,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
         onApprove={approveTask}
         onReject={rejectTask}
         onAbort={abortTask}
+        onSaveAsSkill={onSaveAsSkill}
       />
     </div>
   );

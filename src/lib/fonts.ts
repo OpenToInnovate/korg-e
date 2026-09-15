@@ -1,6 +1,6 @@
 // Font definitions for Nerve UI
 
-export type FontName = 'inter' | 'instrument-sans' | 'space-grotesk' | 'jetbrains-mono';
+export type FontName = 'system' | 'inter' | 'instrument-sans' | 'space-grotesk' | 'jetbrains-mono';
 
 export interface Font {
   name: FontName;
@@ -10,6 +10,13 @@ export interface Font {
 }
 
 export const fonts: Record<FontName, Font> = {
+  'system': {
+    name: 'system',
+    label: 'System',
+    // Apple platforms render SF Pro, Android renders Roboto, Windows Segoe UI.
+    family:
+      "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  },
   'inter': {
     name: 'inter',
     label: 'Inter',
@@ -74,6 +81,5 @@ export function applyFont(fontName: FontName): void {
   root.style.setProperty('--font-mono', monoFont);
 }
 
-// Initialize fonts used in the default shell before settings hydrate
-loadGoogleFont(fonts['instrument-sans'].googleFontsUrl!);
+// Code blocks always use the bundled mono font.
 loadGoogleFont(fonts['jetbrains-mono'].googleFontsUrl!);
