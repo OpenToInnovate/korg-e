@@ -1,9 +1,18 @@
 /** Tests for server/lib/config.ts — env-driven config, helpers, and banner. */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import path from 'node:path';
 
 describe('config module', () => {
-  const originalEnv = { ...process.env };
+  let originalEnv: Record<string, string | undefined>;
+
+  beforeAll(async () => {
+    // Import config first so dotenv-parsed .env values (e.g. NERVE_AUTH from
+    // the developer's .env) are part of the baseline snapshot. Snapping before
+    // this import made afterEach wipe those vars while the cached config
+    // module still reflected them, breaking later env-dependent assertions.
+    await import('./config.js');
+    originalEnv = { ...process.env };
+  });
 
   afterEach(() => {
     process.env = { ...originalEnv };
@@ -39,9 +48,18 @@ describe('config module', () => {
     });
 
     it('defaults auth to false', async () => {
-      const { config } = await import('./config.js');
-      if (!process.env.NERVE_AUTH || process.env.NERVE_AUTH !== 'true') {
+      // Hermetic: force NERVE_AUTH out of the environment (dotenv-parsed .env
+      // values are already baked into the cached config module) and take a
+      // fresh module copy so we test the true default, not the local .env.
+      vi.resetModules();
+      const saved = process.env.NERVE_AUTH;
+      delete process.env.NERVE_AUTH;
+      try {
+        const { config } = await import('./config.js');
         expect(config.auth).toBe(false);
+      } finally {
+        if (saved !== undefined) process.env.NERVE_AUTH = saved;
+        vi.resetModules();
       }
     });
 
