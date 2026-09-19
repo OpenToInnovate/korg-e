@@ -12,6 +12,7 @@ import type { BeadLinkTarget } from '@/features/beads';
 import { useReactions, type ReactionMap } from './useReactions';
 import { buildThreadMap, formatReplyPrefix, parentHash } from './threadMarkers';
 import { ApprovalCards } from './ApprovalCards';
+import { PromptCards } from '@/features/prompts/PromptCards';
 
 interface ChatPanelProps {
   messages: ChatMsg[];
@@ -522,6 +523,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       )}
 
       {/* Input area */}
+      <PromptCards />
       <ApprovalCards />
       <InputBar
         ref={inputBarRef}
