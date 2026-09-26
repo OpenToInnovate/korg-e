@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bell, BellOff, CheckSquare, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
@@ -49,6 +49,13 @@ export interface RosterSidebarProps {
   className?: string;
   /** Active household profile — drives the accent and the empty state. */
   profile?: SidebarProfile | null;
+  /**
+   * Optional header control rendered where the brand title sits. The host
+   * uses this to surface the profile switcher on phones (where the app's top
+   * bar is off-screen while browsing home). When omitted the brand title
+   * shows, so the header always has exactly one leading element.
+   */
+  headerSlot?: ReactNode;
 }
 
 function timeAgo(ts?: number): string {
@@ -273,9 +280,13 @@ export function RosterSidebar(props: RosterSidebarProps) {
           >
             <KorgeLogo size={22} />
           </span>
-          <span className="t-title min-w-0 flex-1 truncate">
-            Korg-e Bot
-          </span>
+          {props.headerSlot ? (
+            <div className="min-w-0 flex-1">{props.headerSlot}</div>
+          ) : (
+            <span className="t-title min-w-0 flex-1 truncate">
+              Korg-e Bot
+            </span>
+          )}
           <button
             type="button"
             onClick={props.onOpenTasks}

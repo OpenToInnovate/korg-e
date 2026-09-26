@@ -1082,6 +1082,7 @@ export default function App({ onLogout }: AppProps) {
                 agentName={agentName}
                 roster={roster}
                 profile={profiles.activeProfile}
+                headerSlot={isCompactLayout ? <ProfileSwitcher profiles={profiles} className="min-w-0 flex-1" /> : undefined}
                 onNewBot={() => setBotDialog({ open: true })}
                 onNewGroup={() => setGroupDialog({ open: true })}
                 onEditBot={(bot) => setBotDialog({ open: true, bot })}

@@ -43,9 +43,29 @@ export class CrossProfileForbiddenError extends Error {
   }
 }
 
+/**
+ * Thrown when an agent is already bound to a different profile. Binding an
+ * agent to two profiles would leak one profile's agents into the other, so the
+ * write is refused rather than silently last-write-wins.
+ */
+export class AgentAlreadyBoundError extends Error {
+  readonly code = 'agent_already_bound';
+  constructor(agentId: string, owner: string) {
+    super(`agent_already_bound: ${agentId} is bound to profile ${owner}`);
+    this.name = 'AgentAlreadyBoundError';
+  }
+}
+
 interface ProfileFile {
   version: number;
   profiles: Profile[];
+  /**
+   * agentId → profileId, kept when a bot is deleted or unlinked so memory
+   * isolation outlives the roster row. Lives here rather than in roster.json
+   * because roster rows are rewritten by every roster write; this record is
+   * the durable ownership fact.
+   */
+  agentLocks: Record<string, string>;
 }
 
 function dataDir(): string {
@@ -78,6 +98,12 @@ function defaultProfile(): Profile {
 
 function normalizeProfileFile(raw: unknown): ProfileFile {
   const source = (raw ?? {}) as Partial<ProfileFile>;
+  const agentLocks: Record<string, string> = {};
+  if (source.agentLocks && typeof source.agentLocks === 'object' && !Array.isArray(source.agentLocks)) {
+    for (const [k, v] of Object.entries(source.agentLocks as Record<string, unknown>)) {
+      if (typeof k === 'string' && k && typeof v === 'string' && v) agentLocks[k] = v;
+    }
+  }
   const seen = new Set<string>();
   const profiles: Profile[] = [];
   if (Array.isArray(source.profiles)) {
@@ -97,7 +123,7 @@ function normalizeProfileFile(raw: unknown): ProfileFile {
     }
   }
   if (!seen.has(DEFAULT_PROFILE_ID)) profiles.unshift(defaultProfile());
-  return { version: PROFILE_SCHEMA_VERSION, profiles };
+  return { version: PROFILE_SCHEMA_VERSION, profiles, agentLocks };
 }
 
 function readProfileFile(): ProfileFile {
@@ -105,7 +131,7 @@ function readProfileFile(): ProfileFile {
     return normalizeProfileFile(JSON.parse(fs.readFileSync(profilesFile(), 'utf-8')));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-    const seeded = { version: PROFILE_SCHEMA_VERSION, profiles: [defaultProfile()] };
+    const seeded: ProfileFile = { version: PROFILE_SCHEMA_VERSION, profiles: [defaultProfile()], agentLocks: {} };
     writeProfileFile(seeded);
     return seeded;
   }
@@ -285,18 +311,75 @@ function agentIdFromSessionKey(value: string): string | null {
 }
 
 /**
- * agentId → profileId, built from roster bot records. Reads roster.json
- * directly (rather than importing the roster store) to keep this module free
- * of a circular dependency. Agents absent from the roster — "main" and any
- * unlinked agent — belong to the default profile.
+ * All key forms an agent may be recorded under. Roster rows store session keys
+ * (`agent:coder:main`) while the privacy surfaces take a bare id (`coder`), so
+ * a lock or lookup must consider both.
+ */
+function agentKeyForms(agentId: string): string[] {
+  const forms = new Set<string>();
+  const trimmed = agentId.trim();
+  if (!trimmed) return [];
+  forms.add(trimmed);
+  const bare = agentIdFromSessionKey(trimmed);
+  if (bare) forms.add(bare);
+  return [...forms];
+}
+
+/** Profile an agent is locked to, or null when it holds no lock. */
+export function findAgentLock(agentId: string | null | undefined): string | null {
+  if (!agentId) return null;
+  const { agentLocks } = readProfileFile();
+  for (const key of agentKeyForms(agentId)) {
+    const owner = agentLocks[key];
+    if (owner) return owner;
+  }
+  return null;
+}
+
+/**
+ * Bind an agent to a profile. Rebinding within the same profile is a no-op;
+ * binding an agent that another profile already owns throws
+ * {@link AgentAlreadyBoundError}. Locks are only ever added, never removed —
+ * unlinking a bot must not hand its agent back to the pool.
+ */
+export async function bindAgentToProfile(agentId: string, profileId: string): Promise<void> {
+  const forms = agentKeyForms(agentId);
+  if (forms.length === 0) return;
+  await withMutex('profiles', async () => {
+    const data = readProfileFile();
+    for (const key of forms) {
+      const owner = data.agentLocks[key];
+      if (owner && owner !== profileId) throw new AgentAlreadyBoundError(agentId, owner);
+    }
+    for (const key of forms) {
+      if (!data.agentLocks[key]) data.agentLocks[key] = profileId;
+    }
+    writeProfileFile(data);
+  });
+}
+
+/**
+ * agentId → profileId for every agent that has an owner. Persistent locks are
+ * consulted first, so an agent whose bot was deleted or unlinked still resolves
+ * to its original profile. Roster rows only fill gaps — they never overwrite a
+ * lock, and an agent bound in two profiles by legacy data keeps the lock's
+ * profile rather than last-write-wins.
  *
- * Both forms are indexed: the raw stored value (a session key like
- * `agent:coder:main`) and its bare agent id (`coder`). The privacy surfaces
- * (memories, file browser, workspace) take a bare agent id, so indexing only
- * the session key would make every cross-profile check miss.
+ * Agents with no lock and no roster row are simply absent: that is the
+ * "unowned" case, and callers decide what it means (see
+ * {@link agentProfileId}).
  */
 export function buildAgentProfileMap(): Map<string, string> {
   const map = new Map<string, string>();
+  let agentLocks: Record<string, string> = {};
+  try {
+    agentLocks = readProfileFile().agentLocks;
+  } catch {
+    agentLocks = {};
+  }
+  for (const [key, profileId] of Object.entries(agentLocks)) {
+    map.set(key, profileId);
+  }
   let parsed: { bots?: RosterBotRow[] } | null = null;
   try {
     parsed = JSON.parse(fs.readFileSync(path.join(dataDir(), 'roster.json'), 'utf-8')) as { bots?: RosterBotRow[] };
@@ -305,24 +388,62 @@ export function buildAgentProfileMap(): Map<string, string> {
   }
   for (const bot of parsed?.bots ?? []) {
     if (!bot || typeof bot.agentId !== 'string' || !bot.agentId) continue;
-    const profileId = bot.profileId || DEFAULT_PROFILE_ID;
-    map.set(bot.agentId, profileId);
-    const bare = agentIdFromSessionKey(bot.agentId);
-    if (bare) map.set(bare, profileId);
+    // A row with no explicit profile is legacy/unowned, not the default
+    // profile: do not let it silently claim the agent.
+    if (typeof bot.profileId !== 'string' || !bot.profileId) continue;
+    const forms = agentKeyForms(bot.agentId);
+    for (const key of forms) {
+      if (!map.has(key)) map.set(key, bot.profileId as string);
+    }
   }
   return map;
 }
 
-/** Profile owning an agent. Unknown agents map to the default profile. */
-export function agentProfileId(agentId: string | null | undefined): string {
-  if (!agentId) return DEFAULT_PROFILE_ID;
-  return buildAgentProfileMap().get(agentId) || DEFAULT_PROFILE_ID;
+/**
+ * Profile owning an agent, or `null` when the agent is unowned (no lock and no
+ * roster row). Callers must treat `null` explicitly — defaulting it to the
+ * default profile is what let unlinked agents leak between profiles.
+ */
+export function agentProfileId(agentId: string | null | undefined): string | null {
+  if (!agentId) return null;
+  const lock = findAgentLock(agentId);
+  if (lock) return lock;
+  const map = buildAgentProfileMap();
+  for (const key of agentKeyForms(agentId)) {
+    const owner = map.get(key);
+    if (owner) return owner;
+  }
+  return null;
 }
 
-/** Throws {@link CrossProfileForbiddenError} when the agent is in another profile. */
+/**
+ * Claim an agent for a profile: refuses the write when the agent already
+ * belongs to a different profile, then persists the lock. This is the single
+ * authority the roster store uses, so the "who owns this agent" check and the
+ * lock write cannot drift apart.
+ */
+export async function claimAgent(agentId: string, profileId: string): Promise<void> {
+  const owner = agentProfileId(agentId);
+  if (owner !== null && owner !== profileId) throw new AgentAlreadyBoundError(agentId, owner);
+  await bindAgentToProfile(agentId, profileId);
+}
+
+/**
+ * Guard the privacy surfaces. Fails closed for non-default profiles: an agent
+ * nobody owns is only reachable from the default profile, never from a family
+ * member's.
+ */
 export function assertAgentInProfile(agentId: string | null | undefined, activeProfileId: string): void {
   if (!agentId) return;
   const owner = agentProfileId(agentId);
+  if (owner === null) {
+    // Unowned agent. The default profile keeps today's permissive behaviour so
+    // existing unlinked agents keep working; every other profile refuses.
+    if (activeProfileId !== DEFAULT_PROFILE_ID) {
+      throw new CrossProfileForbiddenError(`agent ${agentId} is not owned by any profile`);
+    }
+    return;
+  }
   if (owner !== activeProfileId) {
     throw new CrossProfileForbiddenError(`agent ${agentId} belongs to profile ${owner}`);
   }

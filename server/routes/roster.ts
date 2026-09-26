@@ -42,6 +42,7 @@ import {
 } from '../lib/roster-store.js';
 import {
   CrossProfileForbiddenError,
+  AgentAlreadyBoundError,
   ProfileValidationError,
   ProfileNotFoundError,
   createProfile,
@@ -166,6 +167,9 @@ const updateGroupSchema = z.object({
 });
 
 function toStatus(err: unknown): { status: 400 | 403 | 404; body: { error: string } } {
+  if (err instanceof AgentAlreadyBoundError) {
+    return { status: 403, body: { error: 'agent_already_bound' } };
+  }
   if (err instanceof CrossProfileForbiddenError) {
     return { status: 403, body: { error: 'cross_profile_forbidden' } };
   }

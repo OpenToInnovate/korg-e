@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { withMutex } from './mutex.js';
-import { CrossProfileForbiddenError, DEFAULT_PROFILE_ID } from './profiles.js';
+import { AgentAlreadyBoundError, CrossProfileForbiddenError, DEFAULT_PROFILE_ID, claimAgent } from './profiles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -132,9 +132,13 @@ export function validateGroupMembers(memberBotIds: string[], bots: RosterBot[], 
   for (const id of memberBotIds) {
     const bot = byId.get(id);
     if (!bot) throw new RosterValidationError(`Unknown bot: ${id}`);
-    const owner = bot.profileId || DEFAULT_PROFILE_ID;
-    if (owner !== profileId) {
-      throw new CrossProfileForbiddenError(`bot ${id} belongs to profile ${owner}`);
+    // Post-migration a missing profileId is an anomaly, not "the adult
+    // profile": surface it instead of letting the bot mix in.
+    if (typeof bot.profileId !== 'string' || !bot.profileId) {
+      throw new CrossProfileForbiddenError(`bot ${id} has no owning profile`);
+    }
+    if (bot.profileId !== profileId) {
+      throw new CrossProfileForbiddenError(`bot ${id} belongs to profile ${bot.profileId}`);
     }
   }
 }
@@ -152,15 +156,22 @@ function findScoped<T extends { id: string; profileId?: string | null }>(
 ): T {
   const row = list.find((r) => r.id === id);
   if (!row) throw new RosterNotFoundError(`${label} not found: ${id}`);
-  const owner = row.profileId || DEFAULT_PROFILE_ID;
-  if (owner !== profileId) {
-    throw new CrossProfileForbiddenError(`${label} belongs to profile ${owner}`);
+  // Legacy rows were migrated on load, so a missing profileId here is a real
+  // anomaly. Surface it as cross-profile rather than defaulting it into the
+  // adult profile.
+  if (typeof row.profileId !== 'string' || !row.profileId) {
+    throw new CrossProfileForbiddenError(`${label} has no owning profile`);
+  }
+  if (row.profileId !== profileId) {
+    throw new CrossProfileForbiddenError(`${label} belongs to profile ${row.profileId}`);
   }
   return row;
 }
 
 function inProfile<T extends { profileId?: string | null }>(rows: T[], profileId: string): T[] {
-  return rows.filter((r) => (r.profileId || DEFAULT_PROFILE_ID) === profileId);
+  // Rows with no profileId are unowned and excluded — never folded into the
+  // default profile.
+  return rows.filter((r) => typeof r.profileId === 'string' && r.profileId === profileId);
 }
 
 /** Normalize a persisted payload across schema versions (adds sections, sectionId, profileId). */
@@ -280,6 +291,9 @@ export async function createBot(input: CreateBotInput, profileId: string = DEFAU
     if (input.color !== undefined && !isValidColor(input.color)) {
       throw new RosterValidationError('Color must be a #rrggbb hex value');
     }
+    // Exclusivity at the source: an agent may be bound to bots in at most one
+    // profile. Refuse the write rather than storing a duplicate binding.
+    if (input.agentId) await claimAgent(input.agentId, profileId);
     const now = Date.now();
     const bot: RosterBot = {
       id: uniqueId(`${slugify(name)}-${crypto.randomBytes(3).toString('hex')}`, new Set(data.bots.map((b) => b.id))),
@@ -320,7 +334,10 @@ export async function updateBot(id: string, input: UpdateBotInput, profileId: st
       if (!isValidColor(input.color)) throw new RosterValidationError('Color must be a #rrggbb hex value');
       bot.color = input.color;
     }
-    if (input.agentId !== undefined) bot.agentId = input.agentId;
+    if (input.agentId !== undefined) {
+      if (input.agentId) await claimAgent(input.agentId, profileId);
+      bot.agentId = input.agentId;
+    }
     if (input.avatar !== undefined) {
       if (input.avatar.length > 40 || (input.avatar !== '' && !/^[a-z0-9-]+$/.test(input.avatar))) {
         throw new RosterValidationError('Invalid avatar id');

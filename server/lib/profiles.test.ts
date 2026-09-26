@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {
   DEFAULT_PROFILE_ID,
+  AgentAlreadyBoundError,
   CrossProfileForbiddenError,
   ProfileValidationError,
   createProfile,
@@ -15,9 +16,10 @@ import {
   updateProfile,
   agentProfileId,
   assertAgentInProfile,
+  claimAgent,
   buildAgentProfileMap,
 } from './profiles.js';
-import { createBot, createGroup, getRoster, updateBot } from './roster-store.js';
+import { createBot, createGroup, deleteBot, duplicateBot, getRoster, updateBot } from './roster-store.js';
 
 let tmpDir: string;
 let originalNerveDataDir: string | undefined;
@@ -176,7 +178,7 @@ async function updateGroupAlpha(groupId: string, alphaBotId: string) {
 }
 
 describe('agent → profile map', () => {
-  it('maps roster agents to their profile and unknown agents to the default', async () => {
+  it('maps roster agents to their profile and reports unowned agents as null', async () => {
     await createProfile({ name: 'Work' });
     await createBot({ name: 'Coder', agentId: 'agent:coder:main' }, DEFAULT_PROFILE_ID);
     await createBot({ name: 'Client', agentId: 'agent:client:main' }, 'work');
@@ -186,10 +188,11 @@ describe('agent → profile map', () => {
     // The privacy surfaces take a bare agent id, which must resolve too.
     expect(agentProfileId('client')).toBe('work');
     expect(agentProfileId('coder')).toBe(DEFAULT_PROFILE_ID);
-    // Agents absent from the roster (e.g. "main") belong to the default profile.
-    expect(agentProfileId('main')).toBe(DEFAULT_PROFILE_ID);
-    expect(agentProfileId('agent:nobody:main')).toBe(DEFAULT_PROFILE_ID);
-    expect(agentProfileId(null)).toBe(DEFAULT_PROFILE_ID);
+    // Agents with no lock and no roster row are UNOWNED (null), not the
+    // default profile — defaulting them is what allowed cross-profile mixing.
+    expect(agentProfileId('main')).toBeNull();
+    expect(agentProfileId('agent:nobody:main')).toBeNull();
+    expect(agentProfileId(null)).toBeNull();
     // Two bots, indexed under both the session key and the bare agent id.
     expect(buildAgentProfileMap().size).toBe(4);
   });
@@ -205,5 +208,87 @@ describe('agent → profile map', () => {
     expect(() => assertAgentInProfile('client', 'work')).not.toThrow();
     expect(() => assertAgentInProfile('client', DEFAULT_PROFILE_ID)).toThrow(CrossProfileForbiddenError);
     expect(() => assertAgentInProfile('agent:client:main', DEFAULT_PROFILE_ID)).toThrow(CrossProfileForbiddenError);
+  });
+});
+
+/* ── Agent locks: one agent, one profile, forever ──────────────────── */
+
+describe('agent locks', () => {
+  it('rejects binding the same agent to a second profile on create', async () => {
+    await createProfile({ name: 'Work' });
+    await createBot({ name: 'Coder', agentId: 'agent:coder:main' }, DEFAULT_PROFILE_ID);
+
+    await expect(
+      createBot({ name: 'Impostor', agentId: 'agent:coder:main' }, 'work'),
+    ).rejects.toBeInstanceOf(AgentAlreadyBoundError);
+
+    // The rejected create left nothing behind.
+    expect((await getRoster('work')).bots).toHaveLength(0);
+  });
+
+  it('rejects the same bind on update', async () => {
+    await createProfile({ name: 'Work' });
+    await createBot({ name: 'Coder', agentId: 'agent:coder:main' }, DEFAULT_PROFILE_ID);
+    const free = await createBot({ name: 'Free' }, 'work');
+
+    await expect(updateBot(free.id, { agentId: 'agent:coder:main' }, 'work'))
+      .rejects.toBeInstanceOf(AgentAlreadyBoundError);
+    expect((await getRoster('work')).bots.find((b) => b.id === free.id)?.agentId).toBeNull();
+  });
+
+  it('allows a same-profile rebind', async () => {
+    const a = await createBot({ name: 'Coder', agentId: 'agent:coder:main' }, DEFAULT_PROFILE_ID);
+    const b = await createBot({ name: 'Coder 2' }, DEFAULT_PROFILE_ID);
+    const updated = await updateBot(b.id, { agentId: 'agent:coder:main' }, DEFAULT_PROFILE_ID);
+    expect(updated.agentId).toBe('agent:coder:main');
+    expect(agentProfileId('coder')).toBe(DEFAULT_PROFILE_ID);
+    expect(a.profileId).toBe(DEFAULT_PROFILE_ID);
+  });
+
+  it('duplicateBot does not smuggle the agent binding', async () => {
+    await createProfile({ name: 'Work' });
+    const source = await createBot({ name: 'Coder', agentId: 'agent:coder:main' }, DEFAULT_PROFILE_ID);
+    const copy = await duplicateBot(source.id, DEFAULT_PROFILE_ID);
+
+    // The copy is unlinked, so it neither rebinds nor steals the lock.
+    expect(copy.agentId).toBeNull();
+    expect(agentProfileId('coder')).toBe(DEFAULT_PROFILE_ID);
+  });
+
+  it('keeps the lock after the bot is deleted, and still refuses other profiles', async () => {
+    await createProfile({ name: 'Work' });
+    const bot = await createBot({ name: 'Coder', agentId: 'agent:coder:main' }, 'work');
+    expect(agentProfileId('coder')).toBe('work');
+
+    await deleteBot(bot.id, 'work');
+    expect((await getRoster('work')).bots).toHaveLength(0);
+
+    // Memory isolation outlives the roster row: the agent still resolves to
+    // its original profile and cannot be claimed by another profile.
+    expect(agentProfileId('coder')).toBe('work');
+    expect(agentProfileId('agent:coder:main')).toBe('work');
+    await expect(createBot({ name: 'Sneaky', agentId: 'agent:coder:main' }, DEFAULT_PROFILE_ID))
+      .rejects.toBeInstanceOf(AgentAlreadyBoundError);
+    expect(() => assertAgentInProfile('coder', DEFAULT_PROFILE_ID)).toThrow(CrossProfileForbiddenError);
+    expect(() => assertAgentInProfile('coder', 'work')).not.toThrow();
+  });
+
+  it('lock takes precedence over a roster row claiming another profile', async () => {
+    // Legacy-style conflicting data: the lock says work, a row claims korge.
+    await createProfile({ name: 'Work' });
+    await createBot({ name: 'Coder', agentId: 'agent:coder:main' }, 'work');
+    expect(agentProfileId('coder')).toBe('work');
+  });
+});
+
+describe('unowned agents fail closed', () => {
+  it('refuses an unowned agent on non-default profiles, allows it on the default', async () => {
+    await createProfile({ name: 'Work' });
+
+    // No lock, no roster row.
+    expect(agentProfileId('stranger')).toBeNull();
+    expect(() => assertAgentInProfile('stranger', 'work')).toThrow(CrossProfileForbiddenError);
+    // The default profile keeps today's permissive behaviour.
+    expect(() => assertAgentInProfile('stranger', DEFAULT_PROFILE_ID)).not.toThrow();
   });
 });
