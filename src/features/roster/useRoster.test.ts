@@ -118,4 +118,65 @@ describe('useRoster — profile scoping', () => {
     expect(result.current.error).toBeNull();
     expect(result.current.roster.profileId).toBe('p2');
   });
+
+  it('loads the active profile agent-ownership set', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push({ url });
+      if (String(url).includes('agent-ownership')) {
+        return jsonRes({ profileId: 'p1', ownedAgentIds: ['mir-tutor', 'agent:mir-tutor:main'] });
+      }
+      return jsonRes(SAM_ROSTER);
+    }));
+
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.ownedAgentIds).toEqual(['mir-tutor', 'agent:mir-tutor:main']);
+  });
+
+  it('fails closed when the ownership endpoint is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push({ url });
+      if (String(url).includes('agent-ownership')) return jsonRes({ error: 'nope' }, { ok: false, status: 404 });
+      return jsonRes(SAM_ROSTER);
+    }));
+
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Empty set => the sidebar renders no bare session rows at all.
+    expect(result.current.ownedAgentIds).toEqual([]);
+    // The roster itself still loads.
+    expect(result.current.roster.bots).toHaveLength(1);
+  });
+
+  it('fails closed on a malformed ownership payload', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push({ url });
+      if (String(url).includes('agent-ownership')) return jsonRes({ ownedAgentIds: 'nope' });
+      return jsonRes(SAM_ROSTER);
+    }));
+
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.ownedAgentIds).toEqual([]);
+  });
+
+  it('clears ownership on a profile switch so it cannot bleed across', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push({ url });
+      if (String(url).includes('agent-ownership')) {
+        return jsonRes({ profileId: 'p1', ownedAgentIds: ['mir-tutor', 'adult-agent'] });
+      }
+      return jsonRes(SAM_ROSTER);
+    }));
+
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.ownedAgentIds).toContain('adult-agent'));
+
+    act(() => { result.current.clearForProfileSwitch(); });
+
+    expect(result.current.ownedAgentIds).toEqual([]);
+  });
 });

@@ -31,11 +31,32 @@ function throwIfError(res: Response, body: unknown): void {
   throw new Error(message);
 }
 
+/**
+ * Read the active profile's agent-ownership set.
+ *
+ * This is a PRIVACY BOUNDARY, so it fails closed: any problem (endpoint
+ * missing, non-2xx, malformed body) yields an empty set, which renders
+ * roster bots only and no bare session rows. Showing another profile's
+ * agents is far worse than showing none.
+ */
+async function readOwnedAgentIds(res: Response): Promise<string[]> {
+  if (!res.ok) return [];
+  try {
+    const body = await readJson(res);
+    const ids = (body as { ownedAgentIds?: unknown } | null)?.ownedAgentIds;
+    if (!Array.isArray(ids)) return [];
+    return ids.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 const EMPTY_ROSTER: RosterData = { version: 2, bots: [], groups: [], sections: [], profileId: null };
 
 /** Roster data + mutations for bot profiles and group chats. */
 export function useRoster() {
   const [roster, setRoster] = useState<RosterData>(EMPTY_ROSTER);
+  const [ownedAgentIds, setOwnedAgentIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,11 +68,17 @@ export function useRoster() {
   const refresh = useCallback(async () => {
     const generation = ++requestGenerationRef.current;
     try {
-      const res = await fetch('/api/roster');
-      const body = await readJson(res);
+      // Fetched together so roster and ownership always describe the same
+      // profile, and both are discarded together if a switch races us.
+      const [rosterRes, ownershipRes] = await Promise.all([
+        fetch('/api/roster'),
+        fetch('/api/profiles/agent-ownership'),
+      ]);
       if (generation !== requestGenerationRef.current) return;
-      throwIfError(res, body);
+      const body = await readJson(rosterRes);
+      throwIfError(rosterRes, body);
       setRoster(normalizeRoster(body));
+      setOwnedAgentIds(await readOwnedAgentIds(ownershipRes));
       setError(null);
     } catch (err) {
       if (generation !== requestGenerationRef.current) return;
@@ -70,6 +97,7 @@ export function useRoster() {
     // Invalidate any in-flight request for the old profile.
     requestGenerationRef.current += 1;
     setRoster(EMPTY_ROSTER);
+    setOwnedAgentIds([]);
     setError(null);
     setLoading(true);
   }, []);
@@ -277,6 +305,7 @@ export function useRoster() {
 
   return {
     roster,
+    ownedAgentIds,
     loading,
     error,
     refresh,

@@ -17,6 +17,7 @@ import {
   agentProfileId,
   assertAgentInProfile,
   claimAgent,
+  ownedAgentIdsForProfile,
   buildAgentProfileMap,
 } from './profiles.js';
 import { createBot, createGroup, deleteBot, duplicateBot, getRoster, updateBot } from './roster-store.js';
@@ -290,5 +291,44 @@ describe('unowned agents fail closed', () => {
     expect(() => assertAgentInProfile('stranger', 'work')).toThrow(CrossProfileForbiddenError);
     // The default profile keeps today's permissive behaviour.
     expect(() => assertAgentInProfile('stranger', DEFAULT_PROFILE_ID)).not.toThrow();
+  });
+});
+
+describe('owned agent ids for a profile', () => {
+  it('returns only the active profile\'s agents, in both id forms', async () => {
+    await createProfile({ name: 'Mir' });
+    await createBot({ name: 'Tutor', agentId: 'agent:mir-tutor:main' }, 'mir');
+    await createBot({ name: 'Coder', agentId: 'agent:adult-coder:main' }, DEFAULT_PROFILE_ID);
+
+    const mir = ownedAgentIdsForProfile('mir');
+    expect(new Set(mir)).toEqual(new Set(['agent:mir-tutor:main', 'mir-tutor']));
+    // Never another profile's agent.
+    expect(mir).not.toContain('adult-coder');
+    expect(mir).not.toContain('agent:adult-coder:main');
+  });
+
+  it('includes an agent whose bot was deleted but whose lock survives', async () => {
+    await createProfile({ name: 'Mir' });
+    const bot = await createBot({ name: 'Tutor', agentId: 'agent:mir-tutor:main' }, 'mir');
+    await deleteBot(bot.id, 'mir');
+    expect(new Set(ownedAgentIdsForProfile('mir')))
+      .toEqual(new Set(['agent:mir-tutor:main', 'mir-tutor']));
+  });
+
+  it('omits agents owned by a different profile from the default profile too', async () => {
+    await createProfile({ name: 'Mir' });
+    await createBot({ name: 'Tutor', agentId: 'agent:mir-tutor:main' }, 'mir');
+
+    const adult = ownedAgentIdsForProfile(DEFAULT_PROFILE_ID);
+    expect(adult).not.toContain('agent:mir-tutor:main');
+    expect(adult).not.toContain('mir-tutor');
+  });
+
+  it('never lists an unowned agent under a non-default profile', async () => {
+    await createProfile({ name: 'Mir' });
+    // "stranger" has no lock and no roster row anywhere.
+    expect(agentProfileId('stranger')).toBeNull();
+    expect(ownedAgentIdsForProfile('mir')).not.toContain('stranger');
+    expect(ownedAgentIdsForProfile('mir')).not.toContain('agent:stranger:main');
   });
 });

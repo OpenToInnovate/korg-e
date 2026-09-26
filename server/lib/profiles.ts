@@ -429,6 +429,26 @@ export async function claimAgent(agentId: string, profileId: string): Promise<vo
 }
 
 /**
+ * Agent ids that may legitimately appear in a profile, in both forms.
+ *
+ * The client compares these against gateway session keys and bare agent ids, so
+ * both are returned. Mirrors the fail-closed rule in
+ * {@link assertAgentInProfile}: an agent is included only when it resolves to
+ * this profile, and an agent owned by another profile is never included.
+ *
+ * Unowned agents are not enumerable here — the server has no session list — so
+ * for the default profile this returns the agents it actually owns. The client
+ * must keep treating "claimed by no profile" as visible to `korge` only.
+ */
+export function ownedAgentIdsForProfile(profileId: string): string[] {
+  const out = new Set<string>();
+  for (const [agentId, owner] of buildAgentProfileMap()) {
+    if (owner === profileId) out.add(agentId);
+  }
+  return [...out].sort();
+}
+
+/**
  * Guard the privacy surfaces. Fails closed for non-default profiles: an agent
  * nobody owns is only reachable from the default profile, never from a family
  * member's.

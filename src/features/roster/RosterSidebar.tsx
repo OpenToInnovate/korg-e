@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect, type ReactNode } from 'react';
+import { useMemo, useState, useRef, useEffect, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bell, BellOff, CheckSquare, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
@@ -9,6 +9,7 @@ import { getSessionKey } from '@/types';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { buildAgentSidebarTree } from '@/features/sessions/sessionTree';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { getWorkspaceAgentId } from '@/features/workspace/workspaceScope';
 import KorgeAvatar from '@/components/KorgeAvatar';
 import { isCorgiVariant } from '@/components/corgi/corgiVariants';
 import KorgeLogo from '@/components/KorgeLogo';
@@ -133,6 +134,18 @@ export function RosterSidebar(props: RosterSidebarProps) {
     return map;
   }, [sessions]);
 
+  // PRIVACY: a bare session row (an agent with no roster bot record) may only
+  // render if the active profile owns it. Ownership arrives as BOTH bare agent
+  // ids (`mir-tutor`) and full session keys (`agent:mir-tutor:main`), so match
+  // either. An empty set means the endpoint is unavailable — we then show no
+  // session rows at all rather than risk leaking another profile's agents.
+  const ownedAgentIds = useMemo(() => new Set(roster.ownedAgentIds), [roster.ownedAgentIds]);
+  const isAgentOwned = useCallback((sessionKey: string) => {
+    if (ownedAgentIds.size === 0) return false;
+    if (ownedAgentIds.has(sessionKey)) return true;
+    return ownedAgentIds.has(getWorkspaceAgentId(sessionKey));
+  }, [ownedAgentIds]);
+
   const rows = useMemo(() => {
     const linkedKeys = new Set(roster.roster.bots.map((b) => b.agentId).filter(Boolean) as string[]);
     const out: Array<{ key: string; label: string; bot?: RosterBot; sessionKey?: string; time: number }> = [];
@@ -149,10 +162,13 @@ export function RosterSidebar(props: RosterSidebarProps) {
     for (const node of roots) {
       const key = getSessionKey(node.session);
       if (linkedKeys.has(key)) continue;
+      // Not owned by this profile -> drop the row entirely. Do not render it,
+      // do not grey it out, do not surface its name anywhere.
+      if (!isAgentOwned(key)) continue;
       out.push({ key: `session:${key}`, label: getSessionDisplayLabel(node.session), sessionKey: key, time: sessionTime(node.session) });
     }
     return out;
-  }, [roots, sessionByKey, roster.roster.bots]);
+  }, [roots, sessionByKey, roster.roster.bots, isAgentOwned]);
 
   const pinnedRows = rows.filter((r) => r.bot?.pinned);
   const unpinnedRows = rows.filter((r) => !r.bot?.pinned);

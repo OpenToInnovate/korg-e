@@ -48,6 +48,7 @@ import {
   createProfile,
   deleteProfile,
   listProfiles,
+  ownedAgentIdsForProfile,
   profileCookieHeader,
   resolveActiveProfileId,
   updateProfile,
@@ -550,6 +551,11 @@ app.delete('/api/profiles/:id', async (c) => {
     const { status, body: errorBody } = toStatus(err);
     return c.json(errorBody, status);
   }
+});
+
+app.get('/api/profiles/agent-ownership', async (c) => {
+  const profileId = await activeProfileId(c);
+  return c.json({ profileId, ownedAgentIds: ownedAgentIdsForProfile(profileId) });
 });
 
 app.post('/api/profiles/activate', async (c) => {
