@@ -5,6 +5,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { createChatPathLinksTemplate } from '../lib/chat-path-links-config.js';
 
+// The cross-profile guard reads the roster file, so isolate the data dir from
+// the developer's real ~/.nerve data.
+let isolatedDataDir: string;
+let previousDataDir: string | undefined;
+beforeEach(async () => {
+  previousDataDir = process.env.NERVE_DATA_DIR;
+  isolatedDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-datadir-'));
+  process.env.NERVE_DATA_DIR = isolatedDataDir;
+});
+afterEach(async () => {
+  if (previousDataDir === undefined) delete process.env.NERVE_DATA_DIR;
+  else process.env.NERVE_DATA_DIR = previousDataDir;
+  await fs.rm(isolatedDataDir, { recursive: true, force: true });
+});
+
 describe('workspace routes', () => {
   let homeDir: string;
   let mainWorkspace: string;

@@ -16,6 +16,14 @@ import { cn } from '@/lib/utils';
 import type { RosterApi } from './useRoster';
 import type { RosterBot, RosterGroup, RosterSection } from './types';
 
+/** Minimal profile shape the sidebar needs (avoids a profiles→roster dep). */
+export interface SidebarProfile {
+  id: string;
+  name: string;
+  color: string;
+  emoji: string | null;
+}
+
 export interface RosterSidebarProps {
   sessions: Session[];
   currentSession: string;
@@ -39,6 +47,8 @@ export interface RosterSidebarProps {
   onOpenGroupChat?: (sessionKey: string) => void;
   /** Search query is lifted so the empty state can explain filtering. */
   className?: string;
+  /** Active household profile — drives the accent and the empty state. */
+  profile?: SidebarProfile | null;
 }
 
 function timeAgo(ts?: number): string {
@@ -87,12 +97,24 @@ const COLLAPSED_GROUPS_KEY = 'nerve.roster.collapsedGroups';
 export function RosterSidebar(props: RosterSidebarProps) {
   const { sessions, currentSession, busyState, unreadSessions, onSelect, isLoading, roster, className } = props;
   const { markSessionRead, markSessionUnread } = useSessionContext();
+  const profile = props.profile ?? null;
+  const profileId = roster.roster.profileId ?? profile?.id ?? null;
   const [query, setQuery] = useState('');
   const [showHidden, setShowHidden] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => readCollapsedMap(COLLAPSED_SECTIONS_KEY));
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => readCollapsedMap(COLLAPSED_GROUPS_KEY));
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ kind: 'bot' | 'group' | 'section'; id: string; name: string } | null>(null);
+
+  // Profile switch: drop per-view state that referenced the old profile's
+  // rows, so a pending menu/confirm/search can never outlive its row.
+  // Collapse state is intentionally kept — it is keyed by row id and persists.
+  useEffect(() => {
+    setMenuFor(null);
+    setConfirmDelete(null);
+    setQuery('');
+    setShowHidden(false);
+  }, [profileId]);
 
   const roots = useMemo(() => buildAgentSidebarTree(sessions), [sessions]);
   const q = query.trim().toLowerCase();
@@ -245,7 +267,10 @@ export function RosterSidebar(props: RosterSidebarProps) {
       {/* Header: brand + search + new */}
       <div className="shrink-0 px-3 pt-3">
         <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/20 bg-background/55">
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-xl border bg-background/55"
+            style={profile ? { borderColor: `color-mix(in srgb, ${profile.color} 35%, transparent)` } : undefined}
+          >
             <KorgeLogo size={22} />
           </span>
           <span className="t-title min-w-0 flex-1 truncate">
@@ -294,10 +319,30 @@ export function RosterSidebar(props: RosterSidebarProps) {
         {isLoading || roster.loading ? (
           <div className="p-4 text-sm text-muted-foreground">Loading bots… 🐾</div>
         ) : rows.length === 0 && roster.roster.groups.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm leading-6 text-muted-foreground">
-            <div className="text-3xl">🐶</div>
-            <div className="mt-2 font-medium text-foreground">No bots yet</div>
-            <div>Tap + to create your first bot, or start a group.</div>
+          <div className="px-4 py-10 text-center" data-testid="roster-empty-state">
+            <div
+              className="mx-auto flex size-14 items-center justify-center rounded-2xl text-3xl"
+              style={profile ? { background: `color-mix(in srgb, ${profile.color} 18%, transparent)` } : undefined}
+              aria-hidden="true"
+            >
+              {profile?.emoji ?? '🐶'}
+            </div>
+            <div className="mt-3 font-medium text-foreground">
+              {profile ? `No bots in ${profile.name} yet` : 'No bots yet'}
+            </div>
+            <p className="mx-auto mt-1 max-w-[24ch] text-sm leading-6 text-muted-foreground">
+              {profile
+                ? `This profile starts with a clean slate. Add ${profile.name}'s first bot to get going.`
+                : 'Tap + to create your first bot, or start a group.'}
+            </p>
+            <button
+              type="button"
+              onClick={props.onNewBot}
+              className="shell-chip mt-4 min-h-9 gap-1.5 px-3 text-sm font-semibold"
+              data-active="true"
+            >
+              <Plus size={15} aria-hidden="true" /> Add the first bot
+            </button>
           </div>
         ) : (
           <>

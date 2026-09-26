@@ -5,6 +5,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
+// The cross-profile guard reads the roster (and profiles) file, so every test in
+// this file must be isolated from the developer's real ~/.nerve data.
+let isolatedDataDir: string;
+let previousDataDir: string | undefined;
+beforeEach(async () => {
+  previousDataDir = process.env.NERVE_DATA_DIR;
+  isolatedDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'memories-datadir-'));
+  process.env.NERVE_DATA_DIR = isolatedDataDir;
+});
+afterEach(async () => {
+  if (previousDataDir === undefined) delete process.env.NERVE_DATA_DIR;
+  else process.env.NERVE_DATA_DIR = previousDataDir;
+  await fs.rm(isolatedDataDir, { recursive: true, force: true });
+});
+
 describe('memories routes', () => {
   let homeDir: string;
   let tmpDir: string;
@@ -501,5 +516,88 @@ describe('memories routes', () => {
 
       stopFileWatcher();
     });
+  });
+});
+
+/** Profile privacy: a request naming another profile's agent must fail closed. */
+describe('memories cross-profile guard', () => {
+  let homeDir: string;
+  let memoryPath: string;
+  let memoryDir: string;
+  let dataDir: string;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    homeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'memories-profile-'));
+    dataDir = path.join(homeDir, 'data');
+    const tmpDir = path.join(homeDir, '.openclaw', 'workspace');
+    memoryDir = path.join(tmpDir, 'memory');
+    memoryPath = path.join(tmpDir, 'MEMORY.md');
+    await fs.mkdir(memoryDir, { recursive: true });
+    await fs.mkdir(dataDir, { recursive: true });
+    // Seed a "work" profile so the x-nerve-profile header resolves to a real
+    // profile rather than falling back to the default.
+    await fs.writeFile(
+      path.join(dataDir, 'profiles.json'),
+      JSON.stringify({
+        version: 1,
+        profiles: [
+          { id: 'korge', name: 'Korg-e', color: '#C46443', emoji: null, order: 0, createdAt: 1 },
+          { id: 'work', name: 'Work', color: '#0A84FF', emoji: null, order: 1, createdAt: 1 },
+        ],
+      }),
+    );
+    // A roster where the "client" agent belongs to another profile.
+    await fs.writeFile(
+      path.join(dataDir, 'roster.json'),
+      JSON.stringify({
+        version: 2,
+        bots: [{ id: 'b1', profileId: 'work', agentId: 'agent:client:main', name: 'Client', createdAt: 1, updatedAt: 1 }],
+        groups: [],
+        sections: [],
+      }),
+    );
+    process.env.NERVE_DATA_DIR = dataDir;
+  });
+
+  afterEach(async () => {
+    delete process.env.NERVE_DATA_DIR;
+    vi.restoreAllMocks();
+    await fs.rm(homeDir, { recursive: true, force: true });
+  });
+
+  async function buildApp() {
+    vi.resetModules();
+    vi.doMock('../lib/config.js', () => ({
+      config: { auth: false, port: 3000, host: '127.0.0.1', home: homeDir, memoryPath, memoryDir },
+      SESSION_COOKIE_NAME: 'nerve_session_3000',
+    }));
+    vi.doMock('../middleware/rate-limit.js', () => ({
+      rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+    }));
+    vi.doMock('../lib/gateway-client.js', () => ({ invokeGatewayTool: vi.fn(async () => ({})) }));
+    vi.doMock('./events.js', () => ({ broadcast: vi.fn() }));
+
+    const mod = await import('./memories.js');
+    const app = new Hono();
+    app.route('/', mod.default);
+    return app;
+  }
+
+  it('returns 403 cross_profile_forbidden for another profile\'s agent', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/memories?agentId=client', {
+      headers: { 'x-nerve-profile': 'korge' },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'cross_profile_forbidden' });
+  });
+
+  it('allows the agent when its own profile is active', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/memories?agentId=client', {
+      headers: { 'x-nerve-profile': 'work' },
+    });
+    expect(res.status).toBe(200);
   });
 });

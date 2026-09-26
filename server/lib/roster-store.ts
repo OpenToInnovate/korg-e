@@ -15,12 +15,15 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { withMutex } from './mutex.js';
+import { CrossProfileForbiddenError, DEFAULT_PROFILE_ID } from './profiles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 export interface RosterBot {
   id: string;
+  /** Owning profile. Absent in pre-profiles files; migrates to the default profile. */
+  profileId: string;
   /** Linked gateway agent (root session key or agentId). Null until linked. */
   agentId: string | null;
   /** Sidebar section id (project/client grouping). Null = Unassigned. */
@@ -44,6 +47,8 @@ export interface RosterBot {
 
 export interface RosterSection {
   id: string;
+  /** Owning profile. Absent in pre-profiles files; migrates to the default profile. */
+  profileId: string;
   name: string;
   order: number;
   createdAt: number;
@@ -51,6 +56,8 @@ export interface RosterSection {
 
 export interface RosterGroup {
   id: string;
+  /** Owning profile. Absent in pre-profiles files; migrates to the default profile. */
+  profileId: string;
   name: string;
   /** 2–6 bot ids. */
   memberBotIds: string[];
@@ -108,28 +115,74 @@ function isValidColor(value: string): boolean {
   return /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
-export function validateGroupMembers(memberBotIds: string[], bots: RosterBot[]): void {
+/**
+ * Validate group members against the active profile. Distinguishes the two
+ * failure modes deliberately: an id owned by another profile is a 403
+ * (cross_profile_forbidden), an id that exists nowhere is a 400 validation
+ * error, so clients can tell "not yours" from "doesn't exist".
+ */
+export function validateGroupMembers(memberBotIds: string[], bots: RosterBot[], profileId: string): void {
   if (memberBotIds.length < MIN_GROUP_MEMBERS || memberBotIds.length > MAX_GROUP_MEMBERS) {
     throw new RosterValidationError(`Groups need ${MIN_GROUP_MEMBERS}–${MAX_GROUP_MEMBERS} bots`);
   }
   if (new Set(memberBotIds).size !== memberBotIds.length) {
     throw new RosterValidationError('Duplicate group members');
   }
-  const ids = new Set(bots.map((b) => b.id));
+  const byId = new Map(bots.map((b) => [b.id, b]));
   for (const id of memberBotIds) {
-    if (!ids.has(id)) throw new RosterValidationError(`Unknown bot: ${id}`);
+    const bot = byId.get(id);
+    if (!bot) throw new RosterValidationError(`Unknown bot: ${id}`);
+    const owner = bot.profileId || DEFAULT_PROFILE_ID;
+    if (owner !== profileId) {
+      throw new CrossProfileForbiddenError(`bot ${id} belongs to profile ${owner}`);
+    }
   }
 }
 
-/** Normalize a persisted payload across schema versions (adds sections, sectionId). */
+/**
+ * Find a row the active profile may touch. A row owned by another profile is
+ * rejected as cross-profile rather than silently filtered: the request named
+ * a real id, it just isn't yours to read or edit.
+ */
+function findScoped<T extends { id: string; profileId?: string | null }>(
+  list: T[],
+  id: string,
+  profileId: string,
+  label: string,
+): T {
+  const row = list.find((r) => r.id === id);
+  if (!row) throw new RosterNotFoundError(`${label} not found: ${id}`);
+  const owner = row.profileId || DEFAULT_PROFILE_ID;
+  if (owner !== profileId) {
+    throw new CrossProfileForbiddenError(`${label} belongs to profile ${owner}`);
+  }
+  return row;
+}
+
+function inProfile<T extends { profileId?: string | null }>(rows: T[], profileId: string): T[] {
+  return rows.filter((r) => (r.profileId || DEFAULT_PROFILE_ID) === profileId);
+}
+
+/** Normalize a persisted payload across schema versions (adds sections, sectionId, profileId). */
 function normalizeData(raw: Partial<RosterData>): RosterData {
   const bots = Array.isArray(raw.bots)
-    ? raw.bots.map((b) => ({ ...b, sectionId: b.sectionId ?? null, avatar: b.avatar ?? '' }))
+    ? raw.bots.map((b) => ({
+      ...b,
+      profileId: b.profileId || DEFAULT_PROFILE_ID,
+      sectionId: b.sectionId ?? null,
+      avatar: b.avatar ?? '',
+    }))
     : [];
   const groups = Array.isArray(raw.groups)
-    ? raw.groups.map((g) => ({ ...g, alphaBotId: g.alphaBotId ?? null }))
+    ? raw.groups.map((g) => ({
+      ...g,
+      profileId: g.profileId || DEFAULT_PROFILE_ID,
+      alphaBotId: g.alphaBotId ?? null,
+    }))
     : [];
-  const sections = Array.isArray(raw.sections) ? raw.sections : [];
+  const sections = Array.isArray(raw.sections)
+    ? raw.sections.map((s) => ({ ...s, profileId: s.profileId || DEFAULT_PROFILE_ID }))
+    : [];
   return { version: ROSTER_SCHEMA_VERSION, bots, groups, sections };
 }
 
@@ -200,16 +253,26 @@ export interface UpdateGroupInput {
   hidden?: boolean;
 }
 
-/** Get the full roster. */
-export async function getRoster(): Promise<RosterData> {
-  return withMutex('roster', async () => readData());
+/** Get the roster scoped to one profile. */
+export async function getRoster(profileId: string = DEFAULT_PROFILE_ID): Promise<RosterData> {
+  return withMutex('roster', async () => {
+    const data = readData();
+    return {
+      version: ROSTER_SCHEMA_VERSION,
+      bots: inProfile(data.bots, profileId),
+      groups: inProfile(data.groups, profileId),
+      sections: inProfile(data.sections, profileId),
+    };
+  });
 }
 
 /** Create a bot profile. */
-export async function createBot(input: CreateBotInput): Promise<RosterBot> {
+export async function createBot(input: CreateBotInput, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterBot> {
   return withMutex('roster', async () => {
     const data = readData();
-    if (data.bots.length >= MAX_ROSTER_BOTS + data.groups.length && data.bots.length + data.groups.length >= MAX_ROSTER_BOTS) {
+    const scopedBots = inProfile(data.bots, profileId);
+    const scopedGroups = inProfile(data.groups, profileId);
+    if (scopedBots.length + scopedGroups.length >= MAX_ROSTER_BOTS) {
       throw new RosterValidationError(`Roster is limited to ${MAX_ROSTER_BOTS} bots and groups combined`);
     }
     const name = input.name.trim();
@@ -220,6 +283,7 @@ export async function createBot(input: CreateBotInput): Promise<RosterBot> {
     const now = Date.now();
     const bot: RosterBot = {
       id: uniqueId(`${slugify(name)}-${crypto.randomBytes(3).toString('hex')}`, new Set(data.bots.map((b) => b.id))),
+      profileId,
       agentId: input.agentId ?? null,
       sectionId: input.sectionId ?? null,
       avatar: input.avatar ?? '',
@@ -241,11 +305,10 @@ export async function createBot(input: CreateBotInput): Promise<RosterBot> {
 }
 
 /** Update a bot profile. */
-export async function updateBot(id: string, input: UpdateBotInput): Promise<RosterBot> {
+export async function updateBot(id: string, input: UpdateBotInput, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterBot> {
   return withMutex('roster', async () => {
     const data = readData();
-    const bot = data.bots.find((b) => b.id === id);
-    if (!bot) throw new RosterNotFoundError(`Bot not found: ${id}`);
+    const bot = findScoped(data.bots, id, profileId, 'Bot');
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (!name || name.length > 100) throw new RosterValidationError('Bot name must be 1–100 characters');
@@ -268,6 +331,12 @@ export async function updateBot(id: string, input: UpdateBotInput): Promise<Rost
       if (input.sectionId !== null && !data.sections.some((sec) => sec.id === input.sectionId)) {
         throw new RosterValidationError(`Unknown section: ${input.sectionId}`);
       }
+      if (input.sectionId !== null) {
+        const owner = data.sections.find((sec) => sec.id === input.sectionId)?.profileId || DEFAULT_PROFILE_ID;
+        if (owner !== profileId) {
+          throw new CrossProfileForbiddenError(`section ${input.sectionId} belongs to profile ${owner}`);
+        }
+      }
       bot.sectionId = input.sectionId;
     }
     if (input.pinned !== undefined) bot.pinned = input.pinned;
@@ -281,10 +350,17 @@ export async function updateBot(id: string, input: UpdateBotInput): Promise<Rost
 }
 
 /** Duplicate a bot profile (skills + settings, no history). */
-export async function duplicateBot(id: string): Promise<RosterBot> {
-  const data = await getRoster();
+export async function duplicateBot(id: string, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterBot> {
+  const data = await getRoster(profileId);
   const source = data.bots.find((b) => b.id === id);
-  if (!source) throw new RosterNotFoundError(`Bot not found: ${id}`);
+  if (!source) {
+    // Distinguish cross-profile from missing so the route can answer 403 vs 404.
+    const raw = readData();
+    if (raw.bots.some((b) => b.id === id)) {
+      throw new CrossProfileForbiddenError(`bot belongs to profile ${raw.bots.find((b) => b.id === id)?.profileId}`);
+    }
+    throw new RosterNotFoundError(`Bot not found: ${id}`);
+  }
   return createBot({
     name: `${source.name} copy`.slice(0, 100),
     title: source.title,
@@ -293,19 +369,23 @@ export async function duplicateBot(id: string): Promise<RosterBot> {
     agentId: null,
     avatar: source.avatar,
     enabledSkills: [...source.enabledSkills],
-  });
+  }, profileId);
 }
 
 /** Delete a bot profile (also drops it from groups). Returns removed group ids. */
-export async function deleteBot(id: string): Promise<{ removedFromGroups: string[] }> {
+export async function deleteBot(id: string, profileId: string = DEFAULT_PROFILE_ID): Promise<{ removedFromGroups: string[] }> {
   return withMutex('roster', async () => {
     const data = readData();
     const index = data.bots.findIndex((b) => b.id === id);
     if (index < 0) throw new RosterNotFoundError(`Bot not found: ${id}`);
+    if ((data.bots[index].profileId || DEFAULT_PROFILE_ID) !== profileId) {
+      throw new CrossProfileForbiddenError(`bot belongs to profile ${data.bots[index].profileId}`);
+    }
     const [removed] = data.bots.splice(index, 1);
     void removed;
     const removedFromGroups: string[] = [];
     for (const group of data.groups) {
+      if ((group.profileId || DEFAULT_PROFILE_ID) !== profileId) continue;
       if (group.memberBotIds.includes(id)) {
         group.memberBotIds = group.memberBotIds.filter((m) => m !== id);
         group.updatedAt = Date.now();
@@ -317,25 +397,37 @@ export async function deleteBot(id: string): Promise<{ removedFromGroups: string
       }
     }
     // Drop groups left with fewer than 2 members
-    data.groups = data.groups.filter((g) => g.memberBotIds.length >= MIN_GROUP_MEMBERS);
+    data.groups = data.groups.filter(
+      (g) => (g.profileId || DEFAULT_PROFILE_ID) !== profileId || g.memberBotIds.length >= MIN_GROUP_MEMBERS,
+    );
     writeData(data);
     return { removedFromGroups };
   });
 }
 
 /** Create a group chat. */
-export async function createGroup(input: CreateGroupInput): Promise<RosterGroup> {
+export async function createGroup(input: CreateGroupInput, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterGroup> {
   return withMutex('roster', async () => {
     const data = readData();
-    if (data.bots.length + data.groups.length >= MAX_ROSTER_BOTS) {
+    const scopedBots = inProfile(data.bots, profileId);
+    if (scopedBots.length + inProfile(data.groups, profileId).length >= MAX_ROSTER_BOTS) {
       throw new RosterValidationError(`Roster is limited to ${MAX_ROSTER_BOTS} bots and groups combined`);
     }
     const name = input.name.trim();
     if (!name || name.length > 100) throw new RosterValidationError('Group name must be 1–100 characters');
-    validateGroupMembers(input.memberBotIds, data.bots);
+    validateGroupMembers(input.memberBotIds, data.bots, profileId);
+    if (input.alphaBotId !== undefined && input.alphaBotId !== null) {
+      const alpha = data.bots.find((b) => b.id === input.alphaBotId);
+      if (!alpha) throw new RosterValidationError(`Unknown alpha bot: ${input.alphaBotId}`);
+      const alphaOwner = alpha.profileId || DEFAULT_PROFILE_ID;
+      if (alphaOwner !== profileId) {
+        throw new CrossProfileForbiddenError(`alpha bot ${input.alphaBotId} belongs to profile ${alphaOwner}`);
+      }
+    }
     const now = Date.now();
     const group: RosterGroup = {
       id: uniqueId(`${slugify(name)}-${crypto.randomBytes(3).toString('hex')}`, new Set(data.groups.map((g) => g.id))),
+      profileId,
       name,
       memberBotIds: [...input.memberBotIds],
       alphaBotId: input.alphaBotId ?? null,
@@ -351,23 +443,28 @@ export async function createGroup(input: CreateGroupInput): Promise<RosterGroup>
 }
 
 /** Update a group chat. */
-export async function updateGroup(id: string, input: UpdateGroupInput): Promise<RosterGroup> {
+export async function updateGroup(id: string, input: UpdateGroupInput, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterGroup> {
   return withMutex('roster', async () => {
     const data = readData();
-    const group = data.groups.find((g) => g.id === id);
-    if (!group) throw new RosterNotFoundError(`Group not found: ${id}`);
+    const group = findScoped(data.groups, id, profileId, 'Group');
+    const scopedBots = inProfile(data.bots, profileId);
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (!name || name.length > 100) throw new RosterValidationError('Group name must be 1–100 characters');
       group.name = name;
     }
     if (input.memberBotIds !== undefined) {
-      validateGroupMembers(input.memberBotIds, data.bots);
+      validateGroupMembers(input.memberBotIds, data.bots, profileId);
       group.memberBotIds = [...input.memberBotIds];
     }
     if (input.alphaBotId !== undefined) {
-      if (input.alphaBotId !== null && !data.bots.some((b) => b.id === input.alphaBotId)) {
-        throw new RosterValidationError(`Unknown alpha bot: ${input.alphaBotId}`);
+      if (input.alphaBotId !== null) {
+        const alpha = data.bots.find((b) => b.id === input.alphaBotId);
+        if (!alpha) throw new RosterValidationError(`Unknown alpha bot: ${input.alphaBotId}`);
+        const alphaOwner = alpha.profileId || DEFAULT_PROFILE_ID;
+        if (alphaOwner !== profileId) {
+          throw new CrossProfileForbiddenError(`alpha bot ${input.alphaBotId} belongs to profile ${alphaOwner}`);
+        }
       }
       group.alphaBotId = input.alphaBotId;
     }
@@ -380,11 +477,14 @@ export async function updateGroup(id: string, input: UpdateGroupInput): Promise<
 }
 
 /** Delete a group chat. */
-export async function deleteGroup(id: string): Promise<void> {
+export async function deleteGroup(id: string, profileId: string = DEFAULT_PROFILE_ID): Promise<void> {
   return withMutex('roster', async () => {
     const data = readData();
     const index = data.groups.findIndex((g) => g.id === id);
     if (index < 0) throw new RosterNotFoundError(`Group not found: ${id}`);
+    if ((data.groups[index].profileId || DEFAULT_PROFILE_ID) !== profileId) {
+      throw new CrossProfileForbiddenError(`group belongs to profile ${data.groups[index].profileId}`);
+    }
     data.groups.splice(index, 1);
     writeData(data);
   });
@@ -393,18 +493,20 @@ export async function deleteGroup(id: string): Promise<void> {
 /* ── Sidebar sections (GrokBot parity: group bots by project/client) ── */
 
 /** Create a sidebar section. */
-export async function createSection(name: string): Promise<RosterSection> {
+export async function createSection(name: string, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterSection> {
   const clean = name.trim();
   if (!clean || clean.length > 100) throw new RosterValidationError('Section name must be 1–100 characters');
   return withMutex('roster', async () => {
     const data = readData();
-    if (data.sections.length >= MAX_SECTIONS) {
+    const scoped = inProfile(data.sections, profileId);
+    if (scoped.length >= MAX_SECTIONS) {
       throw new RosterValidationError(`Section limit reached (${MAX_SECTIONS})`);
     }
     const section: RosterSection = {
       id: uniqueId(`${slugify(clean)}-${crypto.randomBytes(3).toString('hex')}`, new Set(data.sections.map((s) => s.id))),
+      profileId,
       name: clean,
-      order: data.sections.length,
+      order: scoped.length,
       createdAt: Date.now(),
     };
     data.sections.push(section);
@@ -414,13 +516,12 @@ export async function createSection(name: string): Promise<RosterSection> {
 }
 
 /** Rename a sidebar section. */
-export async function renameSection(id: string, name: string): Promise<RosterSection> {
+export async function renameSection(id: string, name: string, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterSection> {
   const clean = name.trim();
   if (!clean || clean.length > 100) throw new RosterValidationError('Section name must be 1–100 characters');
   return withMutex('roster', async () => {
     const data = readData();
-    const section = data.sections.find((s) => s.id === id);
-    if (!section) throw new RosterNotFoundError(`Section not found: ${id}`);
+    const section = findScoped(data.sections, id, profileId, 'Section');
     section.name = clean;
     writeData(data);
     return section;
@@ -431,15 +532,18 @@ export async function renameSection(id: string, name: string): Promise<RosterSec
  * Delete a sidebar section. Its bots are moved to Unassigned (sectionId null);
  * neither the bots nor their work are deleted.
  */
-export async function deleteSection(id: string): Promise<{ movedBotIds: string[] }> {
+export async function deleteSection(id: string, profileId: string = DEFAULT_PROFILE_ID): Promise<{ movedBotIds: string[] }> {
   return withMutex('roster', async () => {
     const data = readData();
     const index = data.sections.findIndex((s) => s.id === id);
     if (index < 0) throw new RosterNotFoundError(`Section not found: ${id}`);
+    if ((data.sections[index].profileId || DEFAULT_PROFILE_ID) !== profileId) {
+      throw new CrossProfileForbiddenError(`section belongs to profile ${data.sections[index].profileId}`);
+    }
     data.sections.splice(index, 1);
     const movedBotIds: string[] = [];
     for (const bot of data.bots) {
-      if (bot.sectionId === id) {
+      if ((bot.profileId || DEFAULT_PROFILE_ID) === profileId && bot.sectionId === id) {
         bot.sectionId = null;
         bot.updatedAt = Date.now();
         movedBotIds.push(bot.id);
@@ -451,6 +555,6 @@ export async function deleteSection(id: string): Promise<{ movedBotIds: string[]
 }
 
 /** Move a bot to a section (or Unassigned when sectionId is null). */
-export async function moveBotToSection(botId: string, sectionId: string | null): Promise<RosterBot> {
-  return updateBot(botId, { sectionId });
+export async function moveBotToSection(botId: string, sectionId: string | null, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterBot> {
+  return updateBot(botId, { sectionId }, profileId);
 }

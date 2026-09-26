@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RosterBot, RosterData, RosterGroup, RosterSection } from './types';
+
+/** Normalize an /api/roster payload, tolerating a missing profileId. */
+function normalizeRoster(body: unknown): RosterData {
+  const raw = (body ?? {}) as Partial<RosterData>;
+  return {
+    version: typeof raw.version === 'number' ? raw.version : 2,
+    bots: Array.isArray(raw.bots) ? raw.bots : [],
+    groups: Array.isArray(raw.groups) ? raw.groups : [],
+    sections: Array.isArray(raw.sections) ? raw.sections : [],
+    profileId: typeof raw.profileId === 'string' ? raw.profileId : null,
+  };
+}
 
 async function readJson(res: Response): Promise<unknown> {
   const text = await res.text();
@@ -19,24 +31,47 @@ function throwIfError(res: Response, body: unknown): void {
   throw new Error(message);
 }
 
+const EMPTY_ROSTER: RosterData = { version: 2, bots: [], groups: [], sections: [], profileId: null };
+
 /** Roster data + mutations for bot profiles and group chats. */
 export function useRoster() {
-  const [roster, setRoster] = useState<RosterData>({ version: 2, bots: [], groups: [], sections: [] });
+  const [roster, setRoster] = useState<RosterData>(EMPTY_ROSTER);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Bumped on every refresh; a response from an older generation is discarded
+  // so a slow request issued for the previous profile can never repopulate the
+  // sidebar after the user has already switched.
+  const requestGenerationRef = useRef(0);
+
   const refresh = useCallback(async () => {
+    const generation = ++requestGenerationRef.current;
     try {
       const res = await fetch('/api/roster');
       const body = await readJson(res);
+      if (generation !== requestGenerationRef.current) return;
       throwIfError(res, body);
-      setRoster(body as RosterData);
+      setRoster(normalizeRoster(body));
       setError(null);
     } catch (err) {
+      if (generation !== requestGenerationRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load roster');
     } finally {
-      setLoading(false);
+      if (generation === requestGenerationRef.current) setLoading(false);
     }
+  }, []);
+
+  /**
+   * Drop everything immediately when the active profile changes. Called by
+   * the host *before* refetching so the previous profile's bots, groups and
+   * sections are never visible, even for a frame.
+   */
+  const clearForProfileSwitch = useCallback(() => {
+    // Invalidate any in-flight request for the old profile.
+    requestGenerationRef.current += 1;
+    setRoster(EMPTY_ROSTER);
+    setError(null);
+    setLoading(true);
   }, []);
 
   useEffect(() => {
@@ -245,6 +280,7 @@ export function useRoster() {
     loading,
     error,
     refresh,
+    clearForProfileSwitch,
     createBot,
     updateBot,
     duplicateBot,

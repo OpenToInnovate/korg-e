@@ -22,6 +22,12 @@ import type { MemoryItem } from '../types.js';
 import { resolveAgentWorkspace, type AgentWorkspace } from '../lib/agent-workspace.js';
 import { isWorkspaceLocal } from '../lib/workspace-detect.js';
 import { gatewayFilesGet, gatewayFilesSet } from '../lib/gateway-rpc.js';
+import {
+  CrossProfileForbiddenError,
+  PROFILE_HEADER,
+  assertAgentInProfile,
+  resolveActiveProfileIdSync,
+} from '../lib/profiles.js';
 
 const app = new Hono();
 
@@ -142,8 +148,18 @@ function getMutexKey(agentId: string): string {
 
 function resolveWorkspaceOrResponse(c: Context, agentId?: string): AgentWorkspace | Response {
   try {
+    // Privacy guard: a request naming an agent from another profile must not
+    // reach that agent's memory, even though the store is per-agent already.
+    const activeProfileId = resolveActiveProfileIdSync(
+      c.req.header(PROFILE_HEADER) ?? null,
+      c.req.header('cookie') ?? null,
+    );
+    assertAgentInProfile(agentId, activeProfileId);
     return resolveAgentWorkspace(agentId);
-  } catch {
+  } catch (err) {
+    if (err instanceof CrossProfileForbiddenError) {
+      return c.json({ error: 'cross_profile_forbidden' }, 403);
+    }
     return c.json({ ok: false, error: 'Invalid agentId' }, 400);
   }
 }

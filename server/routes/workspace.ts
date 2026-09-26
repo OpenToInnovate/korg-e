@@ -20,6 +20,12 @@ import { InvalidAgentIdError, resolveAgentWorkspace } from '../lib/agent-workspa
 import { isWorkspaceLocal } from '../lib/workspace-detect.js';
 import { gatewayFilesList, gatewayFilesGet, gatewayFilesSet } from '../lib/gateway-rpc.js';
 import { createChatPathLinksTemplate } from '../lib/chat-path-links-config.js';
+import {
+  CrossProfileForbiddenError,
+  PROFILE_HEADER,
+  assertAgentInProfile,
+  resolveActiveProfileId,
+} from '../lib/profiles.js';
 
 const app = new Hono();
 
@@ -34,12 +40,22 @@ const FILE_MAP: Record<string, string> = {
   chatPathLinks: 'CHAT_PATH_LINKS.json',
 };
 
-function getWorkspaceRoot(agentId?: string): { agentId: string; workspaceRoot: string } {
+async function getWorkspaceRoot(c: Context, agentId?: string): Promise<{ agentId: string; workspaceRoot: string }> {
+  // Privacy guard: workspace files (SOUL/IDENTITY/USER…) are per-agent; refuse
+  // agents owned by another profile.
+  const activeProfileId = await resolveActiveProfileId(
+    c.req.header(PROFILE_HEADER) ?? null,
+    c.req.header('cookie') ?? null,
+  );
+  assertAgentInProfile(agentId, activeProfileId);
   const workspace = resolveAgentWorkspace(agentId);
   return { agentId: workspace.agentId, workspaceRoot: workspace.workspaceRoot };
 }
 
 function handleAgentWorkspaceError(c: Context, err: unknown) {
+  if (err instanceof CrossProfileForbiddenError) {
+    return c.json({ error: 'cross_profile_forbidden' }, 403);
+  }
   if (err instanceof InvalidAgentIdError) {
     return c.json({ ok: false, error: err.message }, 400);
   }
@@ -50,7 +66,7 @@ function handleAgentWorkspaceError(c: Context, err: unknown) {
 app.get('/api/workspace/:key', rateLimitGeneral, async (c) => {
   let workspace: { agentId: string; workspaceRoot: string };
   try {
-    workspace = getWorkspaceRoot(c.req.query('agentId'));
+    workspace = await getWorkspaceRoot(c, c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -114,7 +130,7 @@ app.put('/api/workspace/:key', rateLimitGeneral, async (c) => {
 
   let workspace: { agentId: string; workspaceRoot: string };
   try {
-    workspace = getWorkspaceRoot(body.agentId ?? c.req.query('agentId'));
+    workspace = await getWorkspaceRoot(c, body.agentId ?? c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -158,7 +174,7 @@ app.put('/api/workspace/:key', rateLimitGeneral, async (c) => {
 app.get('/api/workspace', rateLimitGeneral, async (c) => {
   let workspace: { agentId: string; workspaceRoot: string };
   try {
-    workspace = getWorkspaceRoot(c.req.query('agentId'));
+    workspace = await getWorkspaceRoot(c, c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }

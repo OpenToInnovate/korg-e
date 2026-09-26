@@ -43,6 +43,8 @@ export interface RosterData {
   bots: RosterBot[];
   groups: RosterGroup[];
   sections: RosterSection[];
+  /** Active profile this roster belongs to. Null on older servers. */
+  profileId?: string | null;
 }
 
 export type RosterSelection =

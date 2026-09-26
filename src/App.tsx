@@ -40,6 +40,8 @@ import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/features/chat/chatPathLinks';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { useRoster } from '@/features/roster/useRoster';
+import { ProfileSwitcher } from '@/features/profiles/ProfileSwitcher';
+import { useProfiles } from '@/features/profiles/useProfiles';
 import { isCorgiVariant } from '@/components/corgi/corgiVariants';
 import { BotDialog, type BotFormValues } from '@/features/roster/BotDialog';
 import { GroupWizard } from '@/features/roster/GroupWizard';
@@ -345,6 +347,21 @@ export default function App({ onLogout }: AppProps) {
   const [botDialog, setBotDialog] = useState<{ open: boolean; bot?: RosterBot }>({ open: false });
   const [groupDialog, setGroupDialog] = useState<{ open: boolean; group?: RosterGroup }>({ open: false });
   const [sectionDialog, setSectionDialog] = useState<{ open: boolean; section?: RosterSection }>({ open: false });
+
+  // Household profiles. The server cookie is the source of truth; this hook
+  // only reflects it. On switch we wipe every trace of the old profile
+  // *before* refetching, so nothing bleeds across profiles.
+  const profiles = useProfiles({
+    onProfileActivated: useCallback(async () => {
+      // 1. Drop roster state immediately (also voids any in-flight old-profile fetch).
+      roster.clearForProfileSwitch();
+      // 2. Drop the open conversation so the previous transcript is gone.
+      setCurrentSession('');
+      // 3. Refetch both lists for the newly active profile.
+      await Promise.all([roster.refresh(), refreshSessions()]);
+      if (isCompactLayout) setMobileView('home');
+    }, [isCompactLayout, refreshSessions, roster, setCurrentSession]),
+  });
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1064,6 +1081,7 @@ export default function App({ onLogout }: AppProps) {
                 isLoading={sessionsLoading}
                 agentName={agentName}
                 roster={roster}
+                profile={profiles.activeProfile}
                 onNewBot={() => setBotDialog({ open: true })}
                 onNewGroup={() => setGroupDialog({ open: true })}
                 onEditBot={(bot) => setBotDialog({ open: true, bot })}
@@ -1131,6 +1149,10 @@ export default function App({ onLogout }: AppProps) {
                   <LayoutGrid size={13} aria-hidden="true" /> Tasks
                 </button>
               )}
+              {/* Household profile — always visible, owns the whole roster. */}
+              <div className="ml-auto shrink-0">
+                <ProfileSwitcher profiles={profiles} />
+              </div>
             </div>
             {viewMode === 'kanban' ? (
               <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Loading board…</div>}>

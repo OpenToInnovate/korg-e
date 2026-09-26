@@ -68,7 +68,7 @@ app.use(
     origin: resolveCorsOrigin,
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Nerve-Profile'],
   }),
 );
 app.use('*', securityHeaders);

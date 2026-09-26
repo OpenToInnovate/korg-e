@@ -38,6 +38,12 @@ import {
 import { InvalidAgentIdError, resolveAgentWorkspace } from '../lib/agent-workspace.js';
 import { isWorkspaceLocal } from '../lib/workspace-detect.js';
 import { gatewayFilesList, gatewayFilesGet, gatewayFilesSet } from '../lib/gateway-rpc.js';
+import {
+  CrossProfileForbiddenError,
+  PROFILE_HEADER,
+  assertAgentInProfile,
+  resolveActiveProfileId,
+} from '../lib/profiles.js';
 
 const app = new Hono();
 
@@ -61,7 +67,15 @@ interface ScopedWorkspace {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function resolveScopedWorkspace(agentId?: string): ScopedWorkspace {
+async function resolveScopedWorkspace(c: Context, agentId?: string): Promise<ScopedWorkspace> {
+  // Privacy guard: naming an agent from another profile must fail closed
+  // before any path is derived from it.
+  const activeProfileId = await resolveActiveProfileId(
+    c.req.header(PROFILE_HEADER) ?? null,
+    c.req.header('cookie') ?? null,
+  );
+  assertAgentInProfile(agentId, activeProfileId);
+
   const customRoot = (config.fileBrowserRoot || '').trim();
   if (customRoot) {
     return {
@@ -80,6 +94,9 @@ function resolveScopedWorkspace(agentId?: string): ScopedWorkspace {
 }
 
 function handleAgentWorkspaceError(c: Context, err: unknown) {
+  if (err instanceof CrossProfileForbiddenError) {
+    return c.json({ error: 'cross_profile_forbidden' }, 403);
+  }
   if (err instanceof InvalidAgentIdError) {
     return c.json({ ok: false, error: err.message }, 400);
   }
@@ -218,7 +235,7 @@ async function getWorkspaceLookupRoots(workspaceRoot: string): Promise<string[]>
 app.get('/api/files/tree', async (c) => {
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -321,7 +338,7 @@ app.get('/api/files/resolve', async (c) => {
 
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -386,7 +403,7 @@ app.get('/api/files/read', async (c) => {
 
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -483,7 +500,7 @@ app.put('/api/files/write', async (c) => {
 
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, body.agentId ?? c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -590,7 +607,7 @@ app.post('/api/files/rename', async (c) => {
 
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, body.agentId ?? c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -634,7 +651,7 @@ app.post('/api/files/move', async (c) => {
 
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, body.agentId ?? c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -682,7 +699,7 @@ app.post('/api/files/trash', async (c) => {
 
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, body.agentId ?? c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -743,7 +760,7 @@ app.post('/api/files/restore', async (c) => {
 
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(body.agentId ?? c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, body.agentId ?? c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
@@ -796,7 +813,7 @@ app.get('/api/files/raw', async (c) => {
 
   let workspace: ScopedWorkspace;
   try {
-    workspace = resolveScopedWorkspace(c.req.query('agentId'));
+    workspace = await resolveScopedWorkspace(c, c.req.query('agentId'));
   } catch (err) {
     return handleAgentWorkspaceError(c, err);
   }
