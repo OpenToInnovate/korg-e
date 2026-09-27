@@ -12,6 +12,7 @@ import {
   inferParentSessionKey,
   isRootChildSession,
   isTopLevelAgentSessionKey,
+  resolveAgentDisplayName,
   pickDefaultSessionKey,
   resolveParentSessionKey,
 } from './sessionKeys';
@@ -136,5 +137,54 @@ describe('sessionKeys', () => {
       parentId: ' agent:main:main ',
     });
     expect(resolveParentSessionKey(child, knownKeys)).toBe('agent:main:main');
+  });
+});
+
+/**
+ * Regression: a brand-new provisioned agent has no gateway session yet, so the
+ * title must come from the roster bot's name. It previously fell through to the
+ * bare "Agent" default and the bot appeared nameless until first use.
+ */
+describe('resolveAgentDisplayName', () => {
+  it('uses the roster bot name when there is no live session', () => {
+    expect(
+      resolveAgentDisplayName('agent:website-coder:main', {
+        botName: 'Website Coder',
+        fallback: 'Agent',
+      }),
+    ).toBe('Website Coder');
+  });
+
+  it('does NOT fall back to the bare default for a session-less new agent', () => {
+    const name = resolveAgentDisplayName('agent:website-coder:main', { fallback: 'Agent' });
+    expect(name).not.toBe('Agent');
+    expect(name).toBe('Website Coder');
+  });
+
+  it('prefers the live session label when one exists', () => {
+    expect(
+      resolveAgentDisplayName('agent:website-coder:main', {
+        liveLabel: 'Site build in progress',
+        botName: 'Website Coder',
+        fallback: 'Agent',
+      }),
+    ).toBe('Site build in progress');
+  });
+
+  it('humanises the agent id when no bot name is known', () => {
+    expect(
+      resolveAgentDisplayName('agent:timetable:main', { fallback: 'Agent' }),
+    ).toBe('Timetable');
+  });
+
+  it('falls back for main and for unparseable keys', () => {
+    expect(resolveAgentDisplayName('agent:main:main', { fallback: 'Alpha' })).toBe('Alpha');
+    expect(resolveAgentDisplayName('not-an-agent-key', { fallback: 'Agent' })).toBe('Agent');
+  });
+
+  it('ignores blank names rather than rendering whitespace', () => {
+    expect(
+      resolveAgentDisplayName('agent:website-coder:main', { botName: '   ', fallback: 'Agent' }),
+    ).toBe('Website Coder');
   });
 });

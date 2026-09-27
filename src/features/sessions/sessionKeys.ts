@@ -235,3 +235,30 @@ export function getAgentRegistrationName(name: string, sessionKey: string): stri
 
   return agentId;
 }
+
+/**
+ * Resolve the display name for an agent session, in priority order:
+ *   1. the live session's own label, if the gateway already has a session;
+ *   2. the roster bot's name — a brand-new provisioned agent has no session
+ *      yet, and without this it fell through to the bare "Agent" default and
+ *      looked nameless until first use;
+ *   3. a humanised agent id (e.g. `website-coder` -> `Website Coder`);
+ *   4. the caller's fallback.
+ */
+export function resolveAgentDisplayName(
+  sessionKey: string,
+  opts: { liveLabel?: string | null; botName?: string | null; fallback: string },
+): string {
+  if (opts.liveLabel?.trim()) return opts.liveLabel.trim();
+  if (opts.botName?.trim()) return opts.botName.trim();
+
+  const rootId = getRootAgentId(sessionKey);
+  if (rootId && rootId !== 'main') {
+    return rootId
+      .split('-')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+  return opts.fallback;
+}

@@ -54,7 +54,7 @@ import { MessageSquare, LayoutGrid, PanelRightClose } from 'lucide-react';
 import { useProposals } from '@/features/kanban/hooks/useProposals';
 import { type BeadLinkTarget, type OpenBeadTab, buildBeadTabId } from '@/features/beads';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
-import { buildAgentRootSessionKey, getSessionDisplayLabel, getRootAgentId } from '@/features/sessions/sessionKeys';
+import { buildAgentRootSessionKey, getSessionDisplayLabel, getRootAgentId, resolveAgentDisplayName } from '@/features/sessions/sessionKeys';
 import { shouldGuardWorkspaceSwitch } from '@/features/workspace/workspaceSwitchGuard';
 import { getWorkspaceAgentId, getWorkspaceRootSessionKey } from '@/features/workspace/workspaceScope';
 
@@ -703,11 +703,23 @@ export default function App({ onLogout }: AppProps) {
     return sessions.find(s => getSessionKey(s) === currentSession);
   }, [sessions, currentSession]);
 
+  // Resolve a display name for a session key. The roster bot's name matters
+  // here: a brand-new provisioned agent has no session in the gateway list
+  // yet, so without it the title fell through to the bare "Agent" default and
+  // the bot looked nameless until first use.
+  const agentDisplayName = useCallback(
+    (sessionKey: string, fallback: string): string => resolveAgentDisplayName(sessionKey, {
+      botName: roster.roster.bots.find((b) => b.agentId && b.agentId === sessionKey)?.name,
+      fallback,
+    }),
+    [roster.roster.bots],
+  );
+
   // Get display name for current session (agent name for main, label for subagents)
   const currentSessionDisplayName = useMemo(() => {
     if (currentSessionData) return getSessionDisplayLabel(currentSessionData, agentName);
-    return agentName;
-  }, [currentSessionData, agentName]);
+    return agentDisplayName(currentSession, agentName);
+  }, [currentSessionData, agentName, agentDisplayName, currentSession]);
 
   const contextTokens = currentSessionData?.totalTokens ?? 0;
   const contextLimit = currentSessionData?.contextTokens || getContextLimit(model);
@@ -719,8 +731,8 @@ export default function App({ onLogout }: AppProps) {
     }
 
     const targetAgentId = getWorkspaceAgentId(sessionKey);
-    return targetAgentId === 'main' ? `${agentName} (main)` : `Agent ${targetAgentId}`;
-  }, [agentName, sessions]);
+    return targetAgentId === 'main' ? `${agentName} (main)` : agentDisplayName(sessionKey, `Agent ${targetAgentId}`);
+  }, [agentName, sessions, agentDisplayName]);
 
   const requestWorkspaceTransition = useCallback((
     targetSessionKey: string,

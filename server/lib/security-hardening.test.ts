@@ -95,7 +95,7 @@ describe('CRITICAL-1: active profile is bound to the session', () => {
   it('activeProfileIdForRequest reads the signed claim, not the header', () => {
     const c = {
       req: { header: (n: string) => (n === 'x-nerve-profile' ? MIR : n === 'cookie' ? `nerve_profile=${MIR}` : undefined) },
-      get: (_k: 'sessionPayload') => ({ pid: DEFAULT_PROFILE_ID }),
+      get: () => ({ pid: DEFAULT_PROFILE_ID }),
     };
     expect(activeProfileIdForRequest(c)).toBe(DEFAULT_PROFILE_ID);
   });

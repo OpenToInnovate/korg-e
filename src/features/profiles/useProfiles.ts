@@ -233,7 +233,7 @@ export function useProfiles({ onProfileActivated }: UseProfilesOptions = {}): Us
       else setError(err instanceof Error ? err.message : 'Could not delete profile');
       throw err;
     }
-  }, [activeProfileId, profiles]);
+  }, [activeProfileId, profiles, refresh]);
 
   const activateProfile = useCallback(async (id: string): Promise<void> => {
     if (id === activeProfileId) return;
@@ -263,7 +263,7 @@ export function useProfiles({ onProfileActivated }: UseProfilesOptions = {}): Us
     } finally {
       setSwitching(false);
     }
-  }, [activeProfileId]);
+  }, [activeProfileId, refresh]);
 
   const activeProfile = useMemo(
     () => profiles.find((p) => p.id === activeProfileId) ?? null,

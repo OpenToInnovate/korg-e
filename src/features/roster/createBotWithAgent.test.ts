@@ -112,7 +112,7 @@ describe('createBotWithAgent — create a new agent (atomic provision)', () => {
 describe('createBotWithAgent — link an existing agent', () => {
   it('creates the row, then links it (the only link path the server implements)', async () => {
     const order: string[] = [];
-    const { api, createBot, linkBotAgent, provisionBot } = makeApi({
+    const { api, linkBotAgent, provisionBot } = makeApi({
       createBot: vi.fn(async () => { order.push('create'); return makeBot({ id: 'row-1', agentId: null }); }),
       linkBotAgent: vi.fn(async () => { order.push('link'); return { bot: makeBot({ id: 'row-1' }), sessionKey: 'agent:designer:main' }; }),
     });
