@@ -315,7 +315,7 @@ function agentIdFromSessionKey(value: string): string | null {
  * (`agent:coder:main`) while the privacy surfaces take a bare id (`coder`), so
  * a lock or lookup must consider both.
  */
-function agentKeyForms(agentId: string): string[] {
+export function agentKeyForms(agentId: string): string[] {
   const forms = new Set<string>();
   const trimmed = agentId.trim();
   if (!trimmed) return [];
@@ -422,6 +422,16 @@ export function agentProfileId(agentId: string | null | undefined): string | nul
  * authority the roster store uses, so the "who owns this agent" check and the
  * lock write cannot drift apart.
  */
+/**
+ * True when `candidate` is the same agent as `listed`, in either id form.
+ * Bridge pairs are stored with whichever form the caller supplied, so matching
+ * must not depend on the form being identical.
+ */
+export function agentIdentityMatches(candidate: string, listed: string): boolean {
+  const a = new Set(agentKeyForms(candidate));
+  return agentKeyForms(listed).some((k) => a.has(k));
+}
+
 export async function claimAgent(agentId: string, profileId: string): Promise<void> {
   const owner = agentProfileId(agentId);
   if (owner !== null && owner !== profileId) throw new AgentAlreadyBoundError(agentId, owner);

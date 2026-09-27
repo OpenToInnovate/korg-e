@@ -49,6 +49,7 @@ import uploadConfigRoutes from './routes/upload-config.js';
 import uploadReferenceRoutes from './routes/upload-reference.js';
 import kanbanRoutes from './routes/kanban.js';
 import rosterRoutes from './routes/roster.js';
+import bridgesRoutes from './routes/bridges.js';
 import reactionsRoutes from './routes/reactions.js';
 import autoreviewRoutes from './routes/autoreview.js';
 import marketplaceRoutes from './routes/marketplace.js';
@@ -96,7 +97,7 @@ const routes = [
   codexLimitsRoutes, claudeCodeLimitsRoutes, versionRoutes, versionCheckRoutes,
   gatewayRoutes, connectDefaultsRoutes,
   workspaceRoutes, cronsRoutes, sessionsRoutes, skillsRoutes, filesRoutes, apiKeysRoutes,
-  voicePhrasesRoutes, fileBrowserRoutes, uploadConfigRoutes, uploadReferenceRoutes, channelsRoutes, kanbanRoutes, rosterRoutes, reactionsRoutes, autoreviewRoutes, marketplaceRoutes, beadsRoutes, promptsRoutes,
+  voicePhrasesRoutes, fileBrowserRoutes, uploadConfigRoutes, uploadReferenceRoutes, channelsRoutes, kanbanRoutes, rosterRoutes, bridgesRoutes, reactionsRoutes, autoreviewRoutes, marketplaceRoutes, beadsRoutes, promptsRoutes,
 ];
 for (const route of routes) app.route('/', route);
 
