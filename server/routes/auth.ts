@@ -62,8 +62,10 @@ app.post('/api/auth/login', rateLimitAuth, async (c) => {
       return c.json({ error: 'Invalid password' }, 401);
     }
 
-    // Create signed session token
-    const token = createSession(config.sessionSecret, config.sessionTtlMs);
+    // Create signed session token. `sid` identifies this login session so a
+    // single session cannot act as both sides of a dual-approval handshake.
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    const token = createSession(config.sessionSecret, config.sessionTtlMs, { sessionId });
 
     // Set HttpOnly, SameSite=Strict cookie
     setCookie(c, SESSION_COOKIE_NAME, token, {

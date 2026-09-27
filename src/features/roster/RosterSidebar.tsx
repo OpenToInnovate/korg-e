@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, useEffect, useCallback, type ReactNode } fro
 import { createPortal } from 'react-dom';
 import {
   Bell, BellOff, CheckSquare, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
-  FolderInput, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Trash2, Users,
+  FolderInput, Link2, Mail, MailOpen, Pencil, Pin, PinOff, Plus, Search, Trash2, Users,
 } from 'lucide-react';
 import type { Session, GranularAgentState } from '@/types';
 import { getSessionKey } from '@/types';
@@ -14,6 +14,7 @@ import KorgeAvatar from '@/components/KorgeAvatar';
 import { isCorgiVariant } from '@/components/corgi/corgiVariants';
 import KorgeLogo from '@/components/KorgeLogo';
 import WorkingPaws from '@/components/WorkingPaws';
+import { toAgentSessionKey, isUnlinkedBot } from '@/features/profiles/agentKeys';
 import { cn } from '@/lib/utils';
 import type { RosterApi } from './useRoster';
 import type { RosterBot, RosterGroup, RosterSection } from './types';
@@ -152,11 +153,14 @@ export function RosterSidebar(props: RosterSidebarProps) {
     const out: Array<{ key: string; label: string; bot?: RosterBot; sessionKey?: string; time: number }> = [];
     for (const b of roster.roster.bots) {
       const session = b.agentId ? sessionByKey.get(b.agentId) : undefined;
+      // Normalise legacy bare ids (`mir-tutor`) to a full session key so rows
+      // created before the fix can still open. An id-less row stays unlinked.
+      const sessionKey = b.agentId ? toAgentSessionKey(b.agentId) : undefined;
       out.push({
         key: `bot:${b.id}`,
         label: b.name,
         bot: b,
-        sessionKey: b.agentId ?? undefined,
+        sessionKey,
         time: session ? sessionTime(session) : b.updatedAt,
       });
     }
@@ -226,6 +230,7 @@ export function RosterSidebar(props: RosterSidebarProps) {
       label={r.label}
       bot={r.bot}
       sessionKey={r.sessionKey}
+      unlinked={Boolean(r.bot) && isUnlinkedBot(r.bot?.agentId)}
       time={r.time}
       active={r.sessionKey === currentSession}
       busy={r.sessionKey ? !!busyState[r.sessionKey] : false}
@@ -346,6 +351,25 @@ export function RosterSidebar(props: RosterSidebarProps) {
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-1">
         {isLoading || roster.loading ? (
           <div className="p-4 text-sm text-muted-foreground">Loading bots… 🐾</div>
+        ) : roster.access === 'denied' ? (
+          /* A refusal must never look like an empty profile. */
+          <div
+            className="m-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-center"
+            data-testid="roster-access-denied"
+            role="alert"
+          >
+            <div className="text-base font-semibold text-foreground">No access to this profile</div>
+            <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
+              {roster.error ?? 'Your session is not permitted to view this profile’s bots and groups.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void roster.refresh()}
+              className="shell-chip mt-3 min-h-9 px-3 text-sm"
+            >
+              Try again
+            </button>
+          </div>
         ) : rows.length === 0 && roster.roster.groups.length === 0 ? (
           <div className="px-4 py-10 text-center" data-testid="roster-empty-state">
             <div
@@ -509,6 +533,8 @@ function BotRow(props: {
   label: string;
   bot?: RosterBot;
   sessionKey?: string;
+  /** True when the row has no backing agent — renders as incomplete, not working. */
+  unlinked?: boolean;
   time: number;
   active: boolean;
   busy: boolean;
@@ -526,7 +552,7 @@ function BotRow(props: {
   onNewProfile: () => void;
 }) {
   const {
-    label, bot, sessionKey, time, active, busy, unread, menuOpen, onToggleMenu, onCloseMenu,
+    label, bot, sessionKey, unlinked = false, time, active, busy, unread, menuOpen, onToggleMenu, onCloseMenu,
     onSelect, onMarkRead, onMarkUnread, sections, roster, onEdit, onDelete, onNewProfile,
   } = props;
   const [moveOpen, setMoveOpen] = useState(false);
@@ -541,7 +567,7 @@ function BotRow(props: {
   const cancelPress = () => clearTimeout(pressTimer.current);
 
   return (
-    <div className="relative" data-has-menu={menuOpen}>
+    <div className="relative" data-has-menu={menuOpen} data-unlinked={unlinked || undefined}>
       <button
         type="button"
         onClick={onSelect}
@@ -556,6 +582,8 @@ function BotRow(props: {
           'pressable flex w-full min-w-0 items-center gap-2.5 rounded-2xl py-2.5 pl-2.5 pr-12 text-left',
           active ? 'bg-secondary' : 'hover:bg-secondary/60',
           unread && !active && 'bg-secondary/40',
+          // An unlinked bot must not look like a working bot.
+          unlinked && 'border border-dashed border-border/80 bg-background/25 hover:bg-background/40',
         )}
       >
         <span className="relative shrink-0">
@@ -592,7 +620,9 @@ function BotRow(props: {
             <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{timeAgo(time)}</span>
           </span>
           <span className="block truncate text-xs text-muted-foreground">
-            {bot?.title || (busy ? 'Working…' : sessionKey ? 'Idle' : 'No session linked')}
+            {unlinked
+              ? 'Not linked — add an agent to use this bot'
+              : (bot?.title || (busy ? 'Working…' : sessionKey ? 'Idle' : 'No session linked'))}
           </span>
         </span>
       </button>
@@ -611,7 +641,10 @@ function BotRow(props: {
           <div className="absolute right-1 top-full z-20 w-52 glass-strong animate-menu-in overflow-hidden rounded-2xl">
             {bot ? (
               <>
-                {sessionKey && (unread
+                {unlinked && (
+                  <RowAction icon={<Link2 size={14} />} label="Link an agent…" onClick={() => { onCloseMenu(); onEdit(); }} />
+                )}
+                {!unlinked && sessionKey && (unread
                   ? <RowAction icon={<MailOpen size={14} />} label="Mark as read" onClick={() => { onCloseMenu(); onMarkRead(); }} />
                   : <RowAction icon={<Mail size={14} />} label="Mark as unread" onClick={() => { onCloseMenu(); onMarkUnread(); }} />)}
                 <RowAction icon={bot.pinned ? <PinOff size={14} /> : <Pin size={14} />} label={bot.pinned ? 'Unpin' : 'Pin'} onClick={() => { onCloseMenu(); void roster.updateBot(bot.id, { pinned: !bot.pinned }); }} />

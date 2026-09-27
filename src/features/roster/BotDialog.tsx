@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Bot, Check, Sparkles, UserPlus, Users } from 'lucide-react';
 import type { RosterBot } from './types';
@@ -22,6 +22,11 @@ export interface BotFormValues {
   avatar: CorgiVariantId;
   /** Link to an existing OpenClaw agent instead of spawning a new session. */
   agentId?: string | null;
+  /**
+   * How the backing agent is obtained. `create` provisions a brand-new agent
+   * (the default, so a new bot just works); `link` binds an existing one.
+   */
+  agentMode?: 'create' | 'link';
   /** Skills to enable for the new bot. */
   enabledSkills?: string[];
 }
@@ -51,9 +56,22 @@ export function BotDialog(props: {
   onSave: (values: BotFormValues) => Promise<void>;
   /** Quick group builder (Create → Group tab). */
   onCreateGroup?: (values: GroupQuickValues) => Promise<void>;
+  /**
+   * Agents that exist but are NOT already bound to any profile. When provided,
+   * the adopt list is limited to these so Tony can never bind an agent another
+   * family member owns.
+   */
+  linkableAgents?: { id: string; name?: string }[] | null;
+  /**
+   * Why the available-agents list could not be loaded (e.g. the route does not
+   * exist yet). Shown verbatim — we never paper over it with an empty list.
+   */
+  linkableAgentsError?: string | null;
 }) {
   const { bot, onClose, onSave } = props;
   const bots = props.bots ?? [];
+  const linkableAgents = props.linkableAgents ?? null;
+  const linkableAgentsError = props.linkableAgentsError ?? null;
   const onCreateGroup = props.onCreateGroup;
   const [name, setName] = useState(bot?.name ?? '');
   const [title, setTitle] = useState(bot?.title ?? '');
@@ -130,6 +148,22 @@ export function BotDialog(props: {
     preview();
   };
 
+  /**
+   * The adopt list is limited to agents not already bound to a profile, so a bot
+   * can never claim an agent another family member owns.
+   *
+   * We deliberately do NOT fall back to the unfiltered marketplace list when
+   * the available-agents data is missing or errored: that would quietly offer
+   * agents other profiles own. Return null so the UI shows the error instead.
+   */
+  const linkable = useMemo(() => {
+    if (!agents) return null;
+    if (linkableAgentsError) return null;
+    if (!linkableAgents) return null;
+    const allowed = new Set(linkableAgents.map((a) => a.id));
+    return agents.filter((a) => allowed.has(a.id));
+  }, [agents, linkableAgents, linkableAgentsError]);
+
   const save = async () => {
     if (!name.trim() || saving) return;
     setSaving(true);
@@ -142,6 +176,8 @@ export function BotDialog(props: {
         color,
         avatar,
         agentId: bot ? bot.agentId : agentId,
+        // Adopting an existing agent means "link"; every other path provisions.
+        agentMode: bot ? undefined : (mode === 'agent' && agentId ? 'link' : 'create'),
         enabledSkills,
       });
     } catch (err) {
@@ -239,15 +275,19 @@ export function BotDialog(props: {
           {/* Adopt an existing OpenClaw agent */}
           {!isEdit && mode === 'agent' && (
             <div className="mt-3">
-              {agentsError ? (
-                <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">{agentsError}</div>
-              ) : agents === null ? (
+              {linkableAgentsError || agentsError ? (
+                <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {linkableAgentsError ?? agentsError}
+                </div>
+              ) : agents === null || linkable === null ? (
                 <div className="py-4 text-center text-xs text-muted-foreground">Loading agents…</div>
-              ) : agents.length === 0 ? (
-                <div className="py-4 text-center text-xs text-muted-foreground">No OpenClaw agents found.</div>
+              ) : linkable.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground">
+                  No agents available to link. Every existing agent is already bound to a profile.
+                </div>
               ) : (
                 <ul className="flex flex-col gap-1.5">
-                  {agents.map((a) => (
+                  {linkable.map((a) => (
                     <li key={a.id}>
                       <button
                         type="button"

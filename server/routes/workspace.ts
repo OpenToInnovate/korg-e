@@ -22,9 +22,8 @@ import { gatewayFilesList, gatewayFilesGet, gatewayFilesSet } from '../lib/gatew
 import { createChatPathLinksTemplate } from '../lib/chat-path-links-config.js';
 import {
   CrossProfileForbiddenError,
-  PROFILE_HEADER,
   assertAgentInProfile,
-  resolveActiveProfileId,
+  activeProfileIdForRequest,
 } from '../lib/profiles.js';
 
 const app = new Hono();
@@ -43,10 +42,7 @@ const FILE_MAP: Record<string, string> = {
 async function getWorkspaceRoot(c: Context, agentId?: string): Promise<{ agentId: string; workspaceRoot: string }> {
   // Privacy guard: workspace files (SOUL/IDENTITY/USER…) are per-agent; refuse
   // agents owned by another profile.
-  const activeProfileId = await resolveActiveProfileId(
-    c.req.header(PROFILE_HEADER) ?? null,
-    c.req.header('cookie') ?? null,
-  );
+  const activeProfileId = activeProfileIdForRequest(c);
   assertAgentInProfile(agentId, activeProfileId);
   const workspace = resolveAgentWorkspace(agentId);
   return { agentId: workspace.agentId, workspaceRoot: workspace.workspaceRoot };

@@ -13,7 +13,10 @@
  */
 
 import { Hono, type Context } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { z } from 'zod';
+import { config, SESSION_COOKIE_NAME } from '../lib/config.js';
+import { reissueSessionForProfile } from '../lib/session.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import {
@@ -28,6 +31,7 @@ import {
   getRoster,
   createBot,
   updateBot,
+  listAllRosterAgentIds,
   duplicateBot,
   deleteBot,
   createGroup,
@@ -50,15 +54,31 @@ import {
   listProfiles,
   ownedAgentIdsForProfile,
   profileCookieHeader,
-  resolveActiveProfileId,
+  activeProfileIdForRequest,
+  buildAgentProfileMap,
   updateProfile,
 } from '../lib/profiles.js';
+import {
+  AgentAlreadyExistsError,
+  AgentProvisionError,
+  linkExistingAgent,
+  listRegisteredAgents,
+  provisionAgent,
+  toBareAgentId,
+} from '../lib/agent-provisioning.js';
 
 const app = new Hono();
 
-/** Active profile for this request: `x-nerve-profile` → cookie → default. */
-function activeProfileId(c: Context): Promise<string> {
-  return resolveActiveProfileId(c.req.header('x-nerve-profile') ?? null, c.req.header('cookie') ?? null);
+/**
+ * Active profile for this request.
+ *
+ * SECURITY: resolved from the SIGNED session claim when the client is
+ * authenticated. The `x-nerve-profile` header and `nerve_profile` cookie are
+ * only consulted when there is no session claim, and can never widen access
+ * beyond what the session already permits.
+ */
+function activeProfileId(c: Context): string {
+  return activeProfileIdForRequest(c);
 }
 
 const nodeDir = dirname(process.execPath);
@@ -167,7 +187,9 @@ const updateGroupSchema = z.object({
   hidden: z.boolean().optional(),
 });
 
-function toStatus(err: unknown): { status: 400 | 403 | 404; body: { error: string } } {
+function toStatus(err: unknown): { status: 400 | 403 | 404 | 409; body: { error: string } } {
+  if (err instanceof AgentAlreadyExistsError) return { status: 409, body: { error: err.message } };
+  if (err instanceof AgentProvisionError) return { status: 400, body: { error: err.message } };
   if (err instanceof AgentAlreadyBoundError) {
     return { status: 403, body: { error: 'agent_already_bound' } };
   }
@@ -185,15 +207,125 @@ app.use('/api/roster/*', rateLimitGeneral);
 app.use('/api/profiles*', rateLimitGeneral);
 
 app.get('/api/roster', async (c) => {
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   return c.json({ ...(await getRoster(profileId)), profileId });
+});
+
+const provisionBotSchema = z.object({
+  name: z.string().min(1).max(100),
+  /** Optional explicit agent id; derived from the name when omitted. */
+  agentId: z.string().max(300).optional(),
+  title: z.string().max(140).optional(),
+  description: z.string().max(2000).optional(),
+  color: colorSchema.optional(),
+  avatar: avatarSchema.optional(),
+  sectionId: z.string().max(120).nullable().optional(),
+  emoji: z.string().max(8).nullable().optional(),
+});
+
+const linkBotSchema = z.object({ agentId: z.string().min(1).max(300) });
+
+/**
+ * POST /api/roster/bots/provision — make "new bot" produce a REAL agent.
+ *
+ * Provisions the gateway agent (workspace + config entry) and creates the roster
+ * row in one step, so the bot is immediately selectable and messageable. The
+ * stored agentId is always a full session key.
+ */
+/**
+ * GET /api/roster/agents/available — the picker of agents that are free to bind.
+ *
+ * Fails closed: an agent referenced by ANY roster row, or present in the
+ * `agentLocks` map, is bound and never returned — so this endpoint cannot leak
+ * another profile's agents, and Tony cannot bind one that another profile owns.
+ *
+ * Ids are returned BARE (`mir-tutor`), never as session keys; the client
+ * normalises via its agentKeys helper. An empty list is a valid 200.
+ */
+app.get('/api/roster/agents/available', async (c) => {
+  const profileId = activeProfileId(c);
+  // The active profile is session-bound and authoritative; a client-asserted
+  // id may not widen it.
+  const requested = c.req.query('profileId')?.trim();
+  if (requested && requested !== profileId) {
+    return c.json({ error: 'cross_profile_forbidden' }, 403);
+  }
+  try {
+    const bound = new Set<string>();
+    // Locks + every roster row we can attribute.
+    for (const key of buildAgentProfileMap().keys()) {
+      const bare = toBareAgentId(key);
+      if (bare) bound.add(bare);
+    }
+    // Any roster row at all, including malformed ones with no profileId.
+    for (const agentId of listAllRosterAgentIds()) {
+      const bare = toBareAgentId(agentId);
+      if (bare) bound.add(bare);
+    }
+    const agents = listRegisteredAgents().filter((a) => !bound.has(a.id));
+    return c.json({ agents });
+  } catch (err) {
+    const { status, body } = toStatus(err);
+    return c.json(body, status);
+  }
+});
+
+app.post('/api/roster/bots/provision', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = provisionBotSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid bot' }, 400);
+  const profileId = activeProfileId(c);
+  try {
+    const agentId = parsed.data.agentId?.trim() || parsed.data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    const provisioned = await provisionAgent({
+      agentId,
+      name: parsed.data.name,
+      profileId,
+      color: parsed.data.color,
+      emoji: parsed.data.emoji ?? null,
+    });
+    const bot = await createBot({
+      name: parsed.data.name,
+      title: parsed.data.title,
+      description: parsed.data.description,
+      color: parsed.data.color,
+      avatar: parsed.data.avatar,
+      sectionId: parsed.data.sectionId,
+      // Full session key, so the sidebar resolves the gateway session.
+      agentId: provisioned.sessionKey,
+    }, profileId);
+    return c.json({ bot, agentId: provisioned.agentId, sessionKey: provisioned.sessionKey, workspaceRoot: provisioned.workspaceRoot }, 201);
+  } catch (err) {
+    const { status, body: errorBody } = toStatus(err);
+    return c.json(errorBody, status);
+  }
+});
+
+/**
+ * POST /api/roster/bots/:id/link — link a bot to an EXISTING agent.
+ * Enforces one-agent-one-profile (refuses `agent_already_bound`) and stores a
+ * full session key.
+ */
+app.post('/api/roster/bots/:id/link', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = linkBotSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid agent id' }, 400);
+  const profileId = activeProfileId(c);
+  try {
+    const sessionKey = await linkExistingAgent(parsed.data.agentId, profileId);
+    const bot = await updateBot(c.req.param('id'), { agentId: sessionKey }, profileId);
+    return c.json({ bot, sessionKey });
+  } catch (err) {
+    const { status, body: errorBody } = toStatus(err);
+    return c.json(errorBody, status);
+  }
 });
 
 app.post('/api/roster/bots', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = createBotSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid bot' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     return c.json(await createBot(parsed.data, profileId), 201);
   } catch (err) {
@@ -206,7 +338,7 @@ app.patch('/api/roster/bots/:id', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = updateBotSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid bot update' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     return c.json(await updateBot(c.req.param('id'), parsed.data, profileId));
   } catch (err) {
@@ -216,7 +348,7 @@ app.patch('/api/roster/bots/:id', async (c) => {
 });
 
 app.post('/api/roster/bots/:id/duplicate', async (c) => {
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     return c.json(await duplicateBot(c.req.param('id'), profileId), 201);
   } catch (err) {
@@ -228,7 +360,7 @@ app.post('/api/roster/bots/:id/duplicate', async (c) => {
 app.delete('/api/roster/bots/:id', async (c) => {
   const id = c.req.param('id');
   const deleteRoutines = c.req.query('deleteRoutines') === 'true';
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     const roster = await getRoster(profileId);
     const bot = roster.bots.find((b) => b.id === id);
@@ -260,7 +392,7 @@ app.post('/api/roster/groups', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = createGroupSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid group' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     const group = await createGroup(parsed.data, profileId);
     // Native OpenClaw team wiring: alpha delegates to members via sessions_spawn.
@@ -296,7 +428,7 @@ app.patch('/api/roster/groups/:id', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = updateGroupSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid group update' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     return c.json(await updateGroup(c.req.param('id'), parsed.data, profileId));
   } catch (err) {
@@ -306,7 +438,7 @@ app.patch('/api/roster/groups/:id', async (c) => {
 });
 
 app.delete('/api/roster/groups/:id', async (c) => {
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     await deleteGroup(c.req.param('id'), profileId);
     return c.json({ ok: true });
@@ -325,7 +457,7 @@ app.post('/api/roster/sections', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = sectionNameSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid section' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     return c.json(await createSection(parsed.data.name, profileId), 201);
   } catch (err) {
@@ -338,7 +470,7 @@ app.patch('/api/roster/sections/:id', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = sectionNameSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid section' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     return c.json(await renameSection(c.req.param('id'), parsed.data.name, profileId));
   } catch (err) {
@@ -348,7 +480,7 @@ app.patch('/api/roster/sections/:id', async (c) => {
 });
 
 app.delete('/api/roster/sections/:id', async (c) => {
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     return c.json(await deleteSection(c.req.param('id'), profileId));
   } catch (err) {
@@ -361,7 +493,7 @@ app.post('/api/roster/bots/:id/section', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = moveBotSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid move' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     return c.json(await moveBotToSection(c.req.param('id'), parsed.data.sectionId, profileId));
   } catch (err) {
@@ -395,7 +527,7 @@ app.post('/api/roster/groups/:id/kickoff', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = kickoffSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid kickoff' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     const roster = await getRoster(profileId);
     const group = roster.groups.find((g) => g.id === c.req.param('id'));
@@ -440,7 +572,7 @@ app.post('/api/roster/groups/:id/chat', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = kickoffSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid message' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     const roster = await getRoster(profileId);
     const group = roster.groups.find((g) => g.id === c.req.param('id'));
@@ -471,7 +603,7 @@ app.post('/api/roster/bots/:id/message', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = handoffSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid handoff' }, 400);
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   try {
     const roster = await getRoster(profileId);
     const bot = roster.bots.find((b) => b.id === c.req.param('id'));
@@ -509,7 +641,7 @@ const activateProfileSchema = z.object({ id: idSchema });
 app.get('/api/profiles', async (c) => {
   return c.json({
     profiles: await listProfiles(),
-    activeProfileId: await activeProfileId(c),
+    activeProfileId: activeProfileId(c),
   });
 });
 
@@ -554,7 +686,7 @@ app.delete('/api/profiles/:id', async (c) => {
 });
 
 app.get('/api/profiles/agent-ownership', async (c) => {
-  const profileId = await activeProfileId(c);
+  const profileId = activeProfileId(c);
   return c.json({ profileId, ownedAgentIds: ownedAgentIdsForProfile(profileId) });
 });
 
@@ -566,8 +698,31 @@ app.post('/api/profiles/activate', async (c) => {
   if (!profiles.some((p) => p.id === parsed.data.id)) {
     return c.json({ error: `Profile not found: ${parsed.data.id}` }, 404);
   }
-  c.header('Set-Cookie', profileCookieHeader(parsed.data.id));
-  return c.json({ ok: true, activeProfileId: parsed.data.id });
+
+  // SECURITY: the profile claim is issued SERVER-SIDE into the signed session.
+  // The plain profile cookie below is only a UX hint — every request re-derives
+  // the active profile from the verified session claim, so flipping the header
+  // or cookie cannot widen access beyond what this session already permits.
+  const cookies: string[] = [];
+  const token = getCookie(c, SESSION_COOKIE_NAME);
+  if (token) {
+    const rebound = reissueSessionForProfile(token, config.sessionSecret, parsed.data.id);
+    if (rebound) {
+      const attrs = [
+        'HttpOnly',
+        'SameSite=Strict',
+        'Path=/',
+        `Max-Age=${Math.floor(config.sessionTtlMs / 1000)}`,
+        ...(c.req.url.startsWith('https') ? ['Secure'] : []),
+      ].join('; ');
+      cookies.push(`${SESSION_COOKIE_NAME}=${rebound}; ${attrs}`);
+    }
+  }
+  cookies.push(profileCookieHeader(parsed.data.id));
+  const res = c.json({ ok: true, activeProfileId: parsed.data.id });
+  // Hono's c.header() takes a single string; multiple cookies must be appended.
+  for (const cookie of cookies) res.headers.append('Set-Cookie', cookie);
+  return res;
 });
 
 export default app;

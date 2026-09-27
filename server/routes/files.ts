@@ -7,11 +7,17 @@
  *  - Restricted to allowed directory prefixes
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { config } from '../lib/config.js';
+import {
+  CrossProfileForbiddenError,
+  activeProfileIdForRequest,
+  agentIdOwningWorkspacePath,
+  assertAgentInProfile,
+} from '../lib/profiles.js';
 
 const app = new Hono();
 
@@ -61,6 +67,19 @@ app.get('/api/files', async (c) => {
   }
   const realAllowed = prefixes.some((prefix) => realPath.startsWith(prefix + path.sep) || realPath === prefix);
   if (!realAllowed) return c.text('Access denied', 403);
+
+  // Profile guard. This route takes no agent, but `~/.openclaw` is on the
+  // allowlist and holds every agent's workspace — so a path inside another
+  // profile's agent workspace is refused rather than served.
+  const ownerAgentId = agentIdOwningWorkspacePath(realPath);
+  if (ownerAgentId) {
+    try {
+      assertAgentInProfile(ownerAgentId, activeProfileIdForRequest(c));
+    } catch (err) {
+      if (err instanceof CrossProfileForbiddenError) return c.text('Access denied', 403);
+      throw err;
+    }
+  }
 
   try {
     const data = await fs.promises.readFile(realPath);

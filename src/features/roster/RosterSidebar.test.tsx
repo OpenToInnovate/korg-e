@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { RosterSidebar } from './RosterSidebar';
 import { ProfileSwitcher } from '@/features/profiles/ProfileSwitcher';
 import type { ProfilesApi, Profile } from '@/features/profiles/useProfiles';
@@ -38,7 +38,7 @@ function makeProfilesApi(): ProfilesApi {
   } as unknown as ProfilesApi;
 }
 
-function makeRosterApi(data: Partial<RosterData> = {}, ownedAgentIds: string[] = []): RosterApi {
+function makeRosterApi(data: Partial<RosterData> = {}, ownedAgentIds: string[] = [], access: 'unknown' | 'ok' | 'denied' | 'error' = 'ok'): RosterApi {
   const roster: RosterData = {
     version: 2,
     bots: [],
@@ -50,6 +50,7 @@ function makeRosterApi(data: Partial<RosterData> = {}, ownedAgentIds: string[] =
   return {
     roster,
     ownedAgentIds,
+    access,
     loading: false,
     error: null,
     refresh: vi.fn(async () => undefined),
@@ -227,5 +228,88 @@ describe('RosterSidebar — cross-profile agent isolation', () => {
     renderSidebar({ sessions: [ADULT, MINE], roster: makeRosterApi({}, ['mir-tutor']) });
     expect(screen.getByText('Mir Tutor')).toBeInTheDocument();
     expect(document.body.textContent ?? '').not.toContain('Adult Agent');
+  });
+});
+
+/**
+ * A roster row with no backing agent used to render like a normal, working
+ * bot — Tony could see "Bot Maintainer" but could never open it. It must read
+ * as incomplete, and offer a way to link an agent.
+ */
+describe('RosterSidebar — unlinked (shell) bots', () => {
+  const GHOST = makeBot({ id: 'ghost', name: 'Bot Maintainer', agentId: null });
+
+  it('renders a bot with no agent as unlinked, not as a working bot', () => {
+    renderSidebar({ roster: makeRosterApi({ bots: [GHOST] }, ['mir-tutor']) });
+
+    expect(screen.getByText('Bot Maintainer')).toBeInTheDocument();
+    expect(screen.getByText(/Not linked — add an agent to use this bot/)).toBeInTheDocument();
+
+    const row = document.querySelector('[data-unlinked="true"]');
+    expect(row).not.toBeNull();
+    // It must not masquerade as busy/working.
+    expect(screen.queryByTestId('working-paws')).toBeNull();
+  });
+
+  it('offers a link action from the row menu', () => {
+    renderSidebar({ roster: makeRosterApi({ bots: [GHOST] }, ['mir-tutor']) });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bot Maintainer actions' }));
+    expect(screen.getByRole('button', { name: /Link an agent/ })).toBeInTheDocument();
+  });
+
+  it('a linked bot is NOT marked unlinked and shows no link action', () => {
+    const linked = makeBot({ id: 'ok', name: 'Builder', agentId: 'agent:builder:main' });
+    renderSidebar({ roster: makeRosterApi({ bots: [linked] }, ['builder']) });
+
+    expect(document.querySelector('[data-unlinked="true"]')).toBeNull();
+    expect(screen.getByText('Builder')).toBeInTheDocument();
+  });
+
+  it('normalises a legacy bare agent id so the row can still open', () => {
+    // Rows created before the fix stored `builder` instead of
+    // `agent:builder:main`; they must still resolve to a session.
+    const legacy = makeBot({ id: 'legacy', name: 'Legacy', agentId: 'builder' });
+    renderSidebar({ roster: makeRosterApi({ bots: [legacy] }, ['builder']) });
+
+    expect(document.querySelector('[data-unlinked="true"]')).toBeNull();
+    expect(screen.queryByText(/Not linked/)).toBeNull();
+  });
+});
+
+/**
+ * A refusal must never read as "this profile has no bots". The UI has to say
+ * the server denied access, loudly, instead of rendering an empty list.
+ */
+describe('RosterSidebar — access refusal surfacing', () => {
+  it('renders a visible denial panel, not the empty state', () => {
+    renderSidebar({ roster: makeRosterApi({}, [], 'denied') });
+
+    const denied = screen.getByTestId('roster-access-denied');
+    expect(denied).toBeInTheDocument();
+    expect(denied).toHaveAttribute('role', 'alert');
+    expect(denied).toHaveTextContent(/no access to this profile/i);
+    // Crucially: NOT the "no bots yet" empty state.
+    expect(screen.queryByTestId('roster-empty-state')).toBeNull();
+  });
+
+  it('does not leak any previous profile data while denied', () => {
+    renderSidebar({
+      roster: makeRosterApi({ bots: [makeBot({ name: 'Mir Bot' })] }, [], 'denied'),
+    });
+
+    expect(screen.getByTestId('roster-access-denied')).toBeInTheDocument();
+    expect(screen.queryByText('Mir Bot')).toBeNull();
+  });
+
+  it('offers a retry so a refused profile is recoverable', () => {
+    renderSidebar({ roster: makeRosterApi({}, [], 'denied') });
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+  });
+
+  it('a genuinely empty profile still shows the empty state (denial is distinct)', () => {
+    renderSidebar({ roster: makeRosterApi({}, [], 'ok') });
+    expect(screen.getByTestId('roster-empty-state')).toBeInTheDocument();
+    expect(screen.queryByTestId('roster-access-denied')).toBeNull();
   });
 });

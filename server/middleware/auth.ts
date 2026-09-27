@@ -49,5 +49,9 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     return c.json({ error: 'Invalid or expired session' }, 401);
   }
 
+  // Expose the VERIFIED payload to downstream handlers. The active profile is
+  // read from this signed claim, never from a client-supplied header/cookie.
+  c.set('sessionPayload', session);
+
   return next();
 });

@@ -20,9 +20,9 @@ import { withMutex } from './mutex.js';
 import {
   agentIdentityMatches,
   agentProfileId,
-  assertAgentInProfile,
   resolveActiveProfileIdSync,
 } from './profiles.js';
+import { toSessionKey } from './agent-provisioning.js';
 
 export type BridgeScope = 'talk';
 export type BridgeStatus = 'pending_remote' | 'active' | 'revoked' | 'expired';
@@ -48,6 +48,12 @@ export interface Bridge {
   expiresAt: number;
   reason: string;
   createdAt: number;
+  /**
+   * Session that created the bridge. A bridge needs approval from BOTH sides, so
+   * the creating session cannot also be the accepting side — otherwise one
+   * session could self-approve the handshake.
+   */
+  createdBySid: string | null;
   log: BridgeLogEntry[];
 }
 
@@ -101,6 +107,28 @@ function logEntry(event: string): BridgeLogEntry {
   return { ts: Date.now(), event };
 }
 
+/**
+ * Upgrade stored agent ids to FULL session keys (`agent:<id>:main`).
+ *
+ * A bare id never resolves to a gateway session, so a bridge built from one
+ * fails to deliver. Normalising on BOTH write and read means a legacy/bare
+ * value is upgraded rather than passed through to `chat.send`.
+ */
+function normalizeAgentList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    try {
+      const key = toSessionKey(value);
+      if (!out.includes(key)) out.push(key);
+    } catch {
+      // Unparseable id — drop it rather than passing garbage to the gateway.
+    }
+  }
+  return out;
+}
+
 function normalizeBridge(raw: Partial<Bridge>): Bridge | null {
   if (!raw || typeof raw.id !== 'string' || !raw.id) return null;
   const scope: BridgeScope = 'talk'; // Fixed. A persisted non-'talk' value is coerced, never trusted.
@@ -108,17 +136,20 @@ function normalizeBridge(raw: Partial<Bridge>): Bridge | null {
     id: raw.id,
     fromProfileId: String(raw.fromProfileId ?? ''),
     toProfileId: String(raw.toProfileId ?? ''),
-    fromAgentIds: Array.isArray(raw.fromAgentIds) ? raw.fromAgentIds.filter((a) => typeof a === 'string') : [],
-    toAgentIds: Array.isArray(raw.toAgentIds) ? raw.toAgentIds.filter((a) => typeof a === 'string') : [],
+    fromAgentIds: normalizeAgentList(raw.fromAgentIds),
+    toAgentIds: normalizeAgentList(raw.toAgentIds),
     scope,
     status: (['pending_remote', 'active', 'revoked', 'expired'] as const).includes(raw.status as BridgeStatus)
       ? (raw.status as BridgeStatus)
       : 'pending_remote',
     adultApprovedAt: typeof raw.adultApprovedAt === 'number' ? raw.adultApprovedAt : null,
     remoteApprovedAt: typeof raw.remoteApprovedAt === 'number' ? raw.remoteApprovedAt : null,
-    expiresAt: typeof raw.expiresAt === 'number' ? raw.expiresAt : 0,
+    // 0 = unknown expiry, which fails CLOSED (see approvalsComplete) rather than
+    // being treated as "never expires".
+    expiresAt: typeof raw.expiresAt === 'number' && raw.expiresAt > 0 ? raw.expiresAt : 0,
     reason: typeof raw.reason === 'string' ? raw.reason : '',
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
+    createdBySid: typeof raw.createdBySid === 'string' && raw.createdBySid ? raw.createdBySid : null,
     log: Array.isArray(raw.log) ? raw.log.filter((e) => e && typeof e.event === 'string') : [],
   };
 }
@@ -150,7 +181,9 @@ function writeBridgeFile(data: BridgeFile): void {
  */
 function expireIfDue(bridge: Bridge): boolean {
   if (bridge.status === 'revoked' || bridge.status === 'expired') return false;
-  if (bridge.expiresAt > 0 && Date.now() > bridge.expiresAt) {
+  // expiresAt <= 0 means "unknown expiry" (hand-edited/legacy) — treat as
+  // expired, never as "never expires".
+  if (bridge.expiresAt <= 0 || Date.now() > bridge.expiresAt) {
     bridge.status = 'expired';
     bridge.log.push(logEntry('expired'));
     return true;
@@ -162,11 +195,15 @@ function expireIfDue(bridge: Bridge): boolean {
  * Both sides have approved and the bridge has not expired. Deliberately does
  * NOT look at `status` — that is what it decides, so folding status in here
  * would make the promotion below unsatisfiable.
+ *
+ * Fails CLOSED: a missing/zero `expiresAt` (hand-edited or legacy data) counts
+ * as expired rather than "never expires".
  */
 function approvalsComplete(bridge: Bridge): boolean {
   return bridge.adultApprovedAt !== null
     && bridge.remoteApprovedAt !== null
-    && (bridge.expiresAt === 0 || Date.now() <= bridge.expiresAt);
+    && bridge.expiresAt > 0
+    && Date.now() <= bridge.expiresAt;
 }
 
 function isActive(bridge: Bridge): boolean {
@@ -177,9 +214,21 @@ function assertAgentList(list: unknown, label: string): string[] {
   if (!Array.isArray(list) || list.length < 1 || list.length > BRIDGE_MAX_AGENTS_PER_SIDE) {
     throw new BridgeValidationError(`${label} must list 1–${BRIDGE_MAX_AGENTS_PER_SIDE} agents`);
   }
-  const cleaned = list.filter((a): a is string => typeof a === 'string' && a.trim().length > 0);
-  if (cleaned.length !== list.length) throw new BridgeValidationError(`${label} contains an invalid agent id`);
-  return [...new Set(cleaned)];
+  // Stored as FULL session keys so delivery resolves a real gateway session.
+  const cleaned: string[] = [];
+  for (const value of list) {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new BridgeValidationError(`${label} contains an invalid agent id`);
+    }
+    let key: string;
+    try {
+      key = toSessionKey(value);
+    } catch {
+      throw new BridgeValidationError(`${label} contains an invalid agent id`);
+    }
+    if (!cleaned.includes(key)) cleaned.push(key);
+  }
+  return cleaned;
 }
 
 export interface CreateBridgeInput {
@@ -200,6 +249,7 @@ export interface CreateBridgeInput {
 export async function createBridge(
   input: CreateBridgeInput,
   activeProfileId: string,
+  sessionId: string | null = null,
 ): Promise<Bridge> {
   const toProfileId = String(input.toProfileId ?? '').trim();
   if (!toProfileId) throw new BridgeValidationError('toProfileId is required');
@@ -245,6 +295,7 @@ export async function createBridge(
       expiresAt: now + ttlRaw * 3_600_000,
       reason,
       createdAt: now,
+      createdBySid: sessionId,
       log: [logEntry('created')],
     };
     data.bridges.push(bridge);
@@ -293,7 +344,7 @@ export async function getBridge(id: string, activeProfileId: string): Promise<Br
  * Accept a bridge. Only the REMOTE profile may accept — an accept from the
  * profile that created it is rejected, so one side cannot self-approve.
  */
-export async function acceptBridge(id: string, activeProfileId: string): Promise<Bridge> {
+export async function acceptBridge(id: string, activeProfileId: string, sessionId: string | null = null): Promise<Bridge> {
   return withMutex('bridges', async () => {
     const data = readBridgeFile();
     const bridge = loadBridge(data, id);
@@ -302,6 +353,13 @@ export async function acceptBridge(id: string, activeProfileId: string): Promise
     }
     if (bridge.toProfileId !== activeProfileId) {
       throw new BridgeNotFoundError(`Bridge not found: ${id}`);
+    }
+    // SECURITY: "approved on BOTH ends" is a real control, not advisory. The
+    // session that created the bridge cannot also be the accepting side, so one
+    // authenticated client cannot self-approve the handshake by flipping the
+    // active profile and calling accept.
+    if (bridge.createdBySid && sessionId && bridge.createdBySid === sessionId) {
+      throw new BridgeNotRemoteError('the session that created this bridge cannot also accept it');
     }
     if (bridge.status === 'revoked' || bridge.status === 'expired') {
       throw new BridgeNotApprovedError(`bridge is ${bridge.status}`);
@@ -375,7 +433,7 @@ export async function assertBridgeSendAllowed(
     // Dual approval gate. Both sides must have approved; revocation and expiry
     // both close it.
     if (bridge.status === 'revoked') throw new BridgeNotApprovedError('bridge is revoked');
-    if (bridge.status === 'expired' || (bridge.expiresAt > 0 && Date.now() > bridge.expiresAt)) {
+    if (bridge.status === 'expired' || bridge.expiresAt <= 0 || Date.now() > bridge.expiresAt) {
       throw new BridgeNotApprovedError('bridge is expired');
     }
     if (bridge.adultApprovedAt === null || bridge.remoteApprovedAt === null || !isActive(bridge)) {
@@ -402,14 +460,6 @@ export async function recordBridgeMessage(id: string, activeProfileId: string, e
     bridge.log.push(logEntry(event));
     writeBridgeFile(data);
   });
-}
-
-/**
- * Exposed for the route layer: a bridge never grants a read. This re-asserts
- * the standard guard so a future caller cannot quietly widen a bridge.
- */
-export function assertBridgeGrantsNoReads(agentId: string, activeProfileId: string): void {
-  assertAgentInProfile(agentId, activeProfileId);
 }
 
 /** Resolve the active profile for a request (header → cookie → default). */

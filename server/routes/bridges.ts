@@ -16,7 +16,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { gatewayRpcCall } from '../lib/gateway-rpc.js';
-import { PROFILE_HEADER } from '../lib/profiles.js';
+import { activeProfileIdForRequest, sessionIdForRequest } from '../lib/profiles.js';
 import {
   BRIDGE_DEFAULT_TTL_HOURS,
   BRIDGE_MAX_TTL_HOURS,
@@ -28,7 +28,6 @@ import {
   BridgeValidationError,
   acceptBridge,
   assertBridgeSendAllowed,
-  bridgeActiveProfileId,
   createBridge,
   listBridgesForProfile,
   recordBridgeMessage,
@@ -37,9 +36,15 @@ import {
 
 const app = new Hono();
 
-/** Active profile: `x-nerve-profile` → `nerve_profile` cookie → default. */
-function activeProfileId(c: { req: { header: (n: string) => string | undefined } }): string {
-  return bridgeActiveProfileId(c.req.header(PROFILE_HEADER) ?? null, c.req.header('cookie') ?? null);
+/**
+ * Active profile for this request, from the SIGNED session claim when present.
+ * A client-supplied header/cookie can never widen what the session permits.
+ */
+function activeProfileId(c: {
+  req: { header: (n: string) => string | undefined };
+  get: (k: 'sessionPayload') => { pid?: string } | undefined;
+}): string {
+  return activeProfileIdForRequest(c);
 }
 
 function toStatus(err: unknown): { status: 400 | 403 | 404; body: { error: string } } {
@@ -77,7 +82,11 @@ app.post('/api/bridges', async (c) => {
   if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'Invalid bridge' }, 400);
   try {
     return c.json(
-      await createBridge({ ...parsed.data, ttlHours: parsed.data.ttlHours ?? BRIDGE_DEFAULT_TTL_HOURS }, activeProfileId(c)),
+      await createBridge(
+        { ...parsed.data, ttlHours: parsed.data.ttlHours ?? BRIDGE_DEFAULT_TTL_HOURS },
+        activeProfileId(c),
+        sessionIdForRequest(c),
+      ),
       201,
     );
   } catch (err) {
@@ -97,7 +106,7 @@ app.get('/api/bridges', async (c) => {
 
 app.post('/api/bridges/:id/accept', async (c) => {
   try {
-    return c.json(await acceptBridge(c.req.param('id'), activeProfileId(c)));
+    return c.json(await acceptBridge(c.req.param('id'), activeProfileId(c), sessionIdForRequest(c)));
   } catch (err) {
     const { status, body: errorBody } = toStatus(err);
     return c.json(errorBody, status);

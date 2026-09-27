@@ -83,6 +83,14 @@ function normalizeList(raw: unknown): Profile[] {
   return raw.map(normalizeProfile).filter((p) => p.id);
 }
 
+/** True when the server refused access to this profile. */
+function isForbiddenStatus(res: Response): boolean {
+  return res.status === 401 || res.status === 403;
+}
+
+/** Outcome of the last profiles load, so the UI can distinguish refusal from empty. */
+export type ProfilesAccess = 'unknown' | 'ok' | 'denied';
+
 export interface UseProfilesOptions {
   /**
    * Runs after a successful activate. The host app uses this to drop every
@@ -100,6 +108,8 @@ export interface UseProfilesResult {
   /** True while an activate round-trip is in flight. */
   switching: boolean;
   error: string | null;
+  /** `denied` when the server refused this profile. */
+  access: ProfilesAccess;
   refresh: () => Promise<void>;
   createProfile: (input: CreateProfileInput) => Promise<Profile>;
   updateProfile: (id: string, input: UpdateProfileInput) => Promise<Profile>;
@@ -115,6 +125,8 @@ export function useProfiles({ onProfileActivated }: UseProfilesOptions = {}): Us
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** `denied` = the server refused this profile. Never render as "empty". */
+  const [access, setAccess] = useState<ProfilesAccess>('unknown');
 
   // Kept in a ref so `activateProfile` never re-creates on parent re-render.
   const onActivatedRef = useRef(onProfileActivated);
@@ -123,13 +135,26 @@ export function useProfiles({ onProfileActivated }: UseProfilesOptions = {}): Us
   const refresh = useCallback(async () => {
     try {
       const res = await fetch('/api/profiles');
+      // A refusal is handled inline (res is not in scope in catch) and must
+      // also drop any profile state we were already showing.
+      if (isForbiddenStatus(res)) {
+        setProfiles([]);
+        setActiveProfileId(null);
+        setAccess('denied');
+        setError('You do not have access to view profiles. Sign in again.');
+        return;
+      }
       const body = await readJson(res);
       throwIfError(res, body);
       const data = (body ?? {}) as { profiles?: unknown; activeProfileId?: unknown };
       const list = normalizeList(data.profiles);
       setProfiles(list);
       const nextActive = typeof data.activeProfileId === 'string' ? data.activeProfileId : null;
-      setActiveProfileId(nextActive && list.some((p) => p.id === nextActive) ? nextActive : (list[0]?.id ?? null));
+      // The server's session binding is the ONLY source of truth for which
+      // profile is active. We never fall back to a client-chosen profile: that
+      // would let the browser assert a binding the server never granted.
+      setActiveProfileId(nextActive && list.some((p) => p.id === nextActive) ? nextActive : null);
+      setAccess('ok');
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profiles');
@@ -199,7 +224,9 @@ export function useProfiles({ onProfileActivated }: UseProfilesOptions = {}): Us
       }
       const remaining = profiles.filter((p) => p.id !== id);
       setProfiles(remaining);
-      if (activeProfileId === id) setActiveProfileId(remaining[0]?.id ?? null);
+      // If we deleted the active profile, the SERVER decides what is active
+      // now. We do not pick a replacement client-side.
+      if (activeProfileId === id) await refresh();
       setError(null);
     } catch (err) {
       if (isLastProfileError(err)) setError(err.message);
@@ -220,7 +247,13 @@ export function useProfiles({ onProfileActivated }: UseProfilesOptions = {}): Us
       const body = await readJson(res);
       throwIfError(res, body);
       const serverActive = (body as { activeProfileId?: unknown } | null)?.activeProfileId;
-      setActiveProfileId(typeof serverActive === 'string' ? serverActive : id);
+      if (typeof serverActive === 'string') {
+        setActiveProfileId(serverActive);
+      } else {
+        // The server did not confirm the binding — re-read it from the server
+        // rather than trusting the id this browser asked for.
+        await refresh();
+      }
       setError(null);
       // Host wipes previous-profile state *before* refetching anything.
       await onActivatedRef.current?.(id);
@@ -244,6 +277,7 @@ export function useProfiles({ onProfileActivated }: UseProfilesOptions = {}): Us
     loading,
     switching,
     error,
+    access,
     refresh,
     createProfile,
     updateProfile,

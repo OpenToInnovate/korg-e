@@ -5,6 +5,32 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
+// The profile guard reads the profiles/roster files, so isolate the data dir from
+// the developer's real ~/.nerve data (and avoid seeding it as a side effect).
+let isolatedDataDir: string;
+let previousDataDir: string | undefined;
+beforeEach(async () => {
+  previousDataDir = process.env.NERVE_DATA_DIR;
+  isolatedDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-datadir-'));
+  process.env.NERVE_DATA_DIR = isolatedDataDir;
+  await fs.writeFile(
+    path.join(isolatedDataDir, 'profiles.json'),
+    JSON.stringify({
+      version: 1,
+      profiles: [
+        { id: 'korge', name: 'Korg-e', color: '#C46443', emoji: null, order: 0, createdAt: 1 },
+        { id: 'mir', name: 'Mir', color: '#0A84FF', emoji: null, order: 1, createdAt: 1 },
+      ],
+      agentLocks: { 'agent:mir-tutor:main': 'mir' },
+    }),
+  );
+});
+afterEach(async () => {
+  if (previousDataDir === undefined) delete process.env.NERVE_DATA_DIR;
+  else process.env.NERVE_DATA_DIR = previousDataDir;
+  await fs.rm(isolatedDataDir, { recursive: true, force: true });
+});
+
 describe('sessions routes', () => {
   let tmpDir: string;
   let spawnSubagentMock: ReturnType<typeof vi.fn>;
@@ -354,5 +380,90 @@ describe('sessions routes', () => {
     expect(spawnSubagentMock).toHaveBeenCalledWith(expect.objectContaining({
       cleanup: 'keep',
     }));
+  });
+});
+
+/**
+ * CRITICAL-2: these routes take a client-supplied agentId/sessionKey and derive
+ * a sessions dir or transcript from it, so they must refuse another profile's
+ * sessions.
+ */
+describe('sessions routes — cross-profile guards', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-guard-'));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  async function buildApp() {
+    vi.doMock('../lib/config.js', () => ({
+      config: {
+        home: tmpDir, sessionsDir: tmpDir, auth: false,
+        port: 3000, host: '127.0.0.1', sslPort: 3443,
+        memoryPath: path.join(tmpDir, 'MEMORY.md'),
+        memoryDir: path.join(tmpDir, 'memory'),
+      },
+      SESSION_COOKIE_NAME: 'nerve_session_3000',
+    }));
+    vi.doMock('../middleware/rate-limit.js', () => ({
+      rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+    }));
+    vi.doMock('../lib/subagent-spawn.js', () => ({ spawnSubagent: vi.fn() }));
+
+    const mod = await import('./sessions.js');
+    const app = new Hono();
+    app.route('/', mod.default);
+    return app;
+  }
+
+  const UUID = '12345678-1234-1234-1234-123456789abc';
+
+  it('GET /api/sessions/:id/model refuses another profile\'s agent', async () => {
+    const app = await buildApp();
+    const res = await app.request(`/api/sessions/${UUID}/model?agentId=mir-tutor`, {
+      headers: { 'x-nerve-profile': 'korge' },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'cross_profile_forbidden' });
+  });
+
+  it('GET /api/sessions/runtime refuses another profile\'s session', async () => {
+    const app = await buildApp();
+    const res = await app.request('/api/sessions/runtime?sessionKey=agent:mir-tutor:main', {
+      headers: { 'x-nerve-profile': 'korge' },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'cross_profile_forbidden' });
+  });
+
+  it('GET /api/sessions/media refuses another profile\'s session', async () => {
+    const app = await buildApp();
+    const res = await app.request(
+      '/api/sessions/media?sessionKey=agent:mir-tutor:main&timestamp=1&imageIndex=0',
+      { headers: { 'x-nerve-profile': 'korge' } },
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'cross_profile_forbidden' });
+  });
+
+  it('does not block the owning profile or the default profile', async () => {
+    const app = await buildApp();
+    // Mir reading its own session is not a 403.
+    const own = await app.request('/api/sessions/runtime?sessionKey=agent:mir-tutor:main', {
+      headers: { 'x-nerve-profile': 'mir' },
+    });
+    expect(own.status).not.toBe(403);
+
+    // 'main' is unowned; the default profile keeps today's behaviour.
+    const mainModel = await app.request(`/api/sessions/${UUID}/model?agentId=main`, {
+      headers: { 'x-nerve-profile': 'korge' },
+    });
+    expect(mainModel.status).not.toBe(403);
   });
 });

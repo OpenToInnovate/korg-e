@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RosterBot, RosterData, RosterGroup, RosterSection } from './types';
+import { toAgentSessionKey, toBareAgentId } from '@/features/profiles/agentKeys';
 
 /** Normalize an /api/roster payload, tolerating a missing profileId. */
 function normalizeRoster(body: unknown): RosterData {
@@ -51,7 +52,15 @@ async function readOwnedAgentIds(res: Response): Promise<string[]> {
   }
 }
 
+/** True when the server refused access to this profile's data. */
+function isForbidden(res: Response): boolean {
+  return res.status === 401 || res.status === 403;
+}
+
 const EMPTY_ROSTER: RosterData = { version: 2, bots: [], groups: [], sections: [], profileId: null };
+
+/** Outcome of the last roster load, so the UI can tell "empty" from "forbidden". */
+export type RosterAccess = 'unknown' | 'ok' | 'denied' | 'error';
 
 /** Roster data + mutations for bot profiles and group chats. */
 export function useRoster() {
@@ -59,6 +68,12 @@ export function useRoster() {
   const [ownedAgentIds, setOwnedAgentIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * How the last load ended. `denied` means the SERVER refused this profile —
+   * the UI must say "not permitted", never render an empty list, because an
+   * empty list reads as "no data" and hides a real access failure.
+   */
+  const [access, setAccess] = useState<RosterAccess>('unknown');
 
   // Bumped on every refresh; a response from an older generation is discarded
   // so a slow request issued for the previous profile can never repopulate the
@@ -75,13 +90,38 @@ export function useRoster() {
         fetch('/api/profiles/agent-ownership'),
       ]);
       if (generation !== requestGenerationRef.current) return;
+
+      // A refusal must be visible and must not leave another profile's data
+      // on screen. Clear first, then report.
+      if (isForbidden(rosterRes) || isForbidden(ownershipRes)) {
+        setRoster(EMPTY_ROSTER);
+        setOwnedAgentIds([]);
+        setAccess('denied');
+        setError('You do not have access to this profile’s data. Switch to a profile you own, or sign in again.');
+        return;
+      }
+
       const body = await readJson(rosterRes);
       throwIfError(rosterRes, body);
       setRoster(normalizeRoster(body));
-      setOwnedAgentIds(await readOwnedAgentIds(ownershipRes));
-      setError(null);
+      setAccess('ok');
+
+      // Ownership fails closed, but never silently: an empty agent list with
+      // no explanation would look like "this profile has no agents".
+      if (!ownershipRes.ok) {
+        setOwnedAgentIds([]);
+        setError('Could not verify which agents belong to this profile, so only saved bots are shown.');
+      } else {
+        setOwnedAgentIds(await readOwnedAgentIds(ownershipRes));
+        setError(null);
+      }
     } catch (err) {
       if (generation !== requestGenerationRef.current) return;
+      // Any failure drops the previous profile's rows rather than leaving
+      // stale data on screen.
+      setRoster(EMPTY_ROSTER);
+      setOwnedAgentIds([]);
+      setAccess('error');
       setError(err instanceof Error ? err.message : 'Failed to load roster');
     } finally {
       if (generation === requestGenerationRef.current) setLoading(false);
@@ -98,6 +138,7 @@ export function useRoster() {
     requestGenerationRef.current += 1;
     setRoster(EMPTY_ROSTER);
     setOwnedAgentIds([]);
+    setAccess('unknown');
     setError(null);
     setLoading(true);
   }, []);
@@ -303,10 +344,126 @@ export function useRoster() {
     return body as { ok: boolean };
   }, []);
 
+  /**
+   * POST /api/roster/bots/provision — provisions the gateway agent AND creates
+   * the roster row in ONE call, so there is no half-state to roll back.
+   * Contract verified against `server/routes/roster.ts` (`provisionBotSchema`):
+   * `name` required; `agentId` optional (the server derives the slug when
+   * omitted). Note it has no `enabledSkills` — apply those with a follow-up
+   * PATCH. The server takes the profile from its own session binding
+   * (`activeProfileId(c)`), so we never send a profile id in the body.
+   */
+  const provisionBot = useCallback(async (input: {
+    name: string;
+    agentId?: string | null;
+    title?: string;
+    description?: string;
+    color?: string;
+    avatar?: string;
+    sectionId?: string | null;
+    emoji?: string | null;
+  }): Promise<{ bot: RosterBot; sessionKey: string }> => {
+    const res = await fetch('/api/roster/bots/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: input.name,
+        // Omit entirely when absent so the server derives the slug itself.
+        ...(input.agentId ? { agentId: toBareAgentId(input.agentId) } : {}),
+        title: input.title,
+        description: input.description,
+        color: input.color,
+        avatar: input.avatar,
+        sectionId: input.sectionId ?? undefined,
+        emoji: input.emoji ?? undefined,
+      }),
+    });
+    const body = await readJson(res);
+    if (!res.ok) {
+      const err = (body ?? {}) as { error?: unknown };
+      const error = new Error(
+        typeof err.error === 'string' ? err.error : `Could not create the agent (${res.status})`,
+      ) as Error & { status: number };
+      error.status = res.status;
+      throw error;
+    }
+    const data = (body ?? {}) as { bot?: RosterBot; sessionKey?: string };
+    // Always normalise: a bare id here would recreate the shell-bot bug.
+    const sessionKey = toAgentSessionKey(data.sessionKey ?? data.bot?.agentId);
+    if (!sessionKey || !data.bot) throw new Error('Provisioning returned no bot');
+    return { bot: { ...data.bot, agentId: sessionKey }, sessionKey };
+  }, []);
+
+  /**
+   * POST /api/roster/bots/:id/link — bind an ALREADY-REGISTERED agent to an
+   * existing row. This is the "Bot Maintainer" repair path, and the only link
+   * path the server actually implements: `provision` cannot take an existing
+   * agent, because `provisionAgent()` refuses an id that already exists.
+   */
+  const linkBotAgent = useCallback(async (input: { botId: string; agentId: string }): Promise<{ bot: RosterBot; sessionKey: string }> => {
+    const res = await fetch(`/api/roster/bots/${encodeURIComponent(input.botId)}/link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId: toBareAgentId(input.agentId) }),
+    });
+    const body = await readJson(res);
+    if (!res.ok) {
+      const err = (body ?? {}) as { error?: unknown };
+      const raw = typeof err.error === 'string' ? err.error : `Could not link agent (${res.status})`;
+      // The server's machine codes are not user-readable; translate them.
+      const message = raw === 'agent_already_bound'
+        ? 'That agent already belongs to another profile.'
+        : raw === 'cross_profile_forbidden'
+          ? 'That agent belongs to another profile.'
+          : raw;
+      const error = new Error(message) as Error & { status: number; code: string };
+      error.status = res.status;
+      error.code = raw;
+      throw error;
+    }
+    const data = (body ?? {}) as { bot?: RosterBot; sessionKey?: string };
+    const sessionKey = toAgentSessionKey(data.sessionKey ?? data.bot?.agentId);
+    if (!sessionKey || !data.bot) throw new Error('Linking returned no bot');
+    return { bot: { ...data.bot, agentId: sessionKey }, sessionKey };
+  }, []);
+
+  /**
+   * GET /api/roster/agents/available?profileId= — agents not yet bound to any
+   * profile's roster.
+   *
+   * Until this route lands it 404s. We deliberately THROW rather than return an
+   * empty list: a silent `[]` renders as "no agents available", which reads as
+   * "there is nothing here" rather than "this could not be checked". The dialog
+   * surfaces the real reason.
+   */
+  const listLinkableAgents = useCallback(async (profileId: string): Promise<{ id: string; name?: string }[]> => {
+    const res = await fetch(`/api/roster/agents/available?profileId=${encodeURIComponent(profileId)}`);
+    const body = await readJson(res);
+    if (!res.ok) {
+      const err = (body ?? {}) as { error?: unknown };
+      const raw = typeof err.error === 'string' ? err.error : `Could not list available agents (${res.status})`;
+      const message = res.status === 404
+        ? 'Could not list agents to link: the server does not provide an available-agents list yet.'
+        : raw;
+      const error = new Error(message) as Error & { status: number };
+      error.status = res.status;
+      throw error;
+    }
+    const list = (body as { agents?: unknown } | null)?.agents;
+    if (!Array.isArray(list)) {
+      throw new Error('Available-agents list was malformed');
+    }
+    return list
+      .map((a) => (a ?? {}) as { id?: unknown; agentId?: unknown; name?: unknown })
+      .map((a) => ({ id: toBareAgentId(String(a.id ?? a.agentId ?? '')), name: typeof a.name === 'string' ? a.name : undefined }))
+      .filter((a) => a.id.length > 0);
+  }, []);
+
   return {
     roster,
     ownedAgentIds,
     loading,
+    access,
     error,
     refresh,
     clearForProfileSwitch,
@@ -321,6 +478,9 @@ export function useRoster() {
     renameSection,
     deleteSection,
     moveBotToSection,
+    provisionBot,
+    linkBotAgent,
+    listLinkableAgents,
     kickoffGroup,
     chatWithGroup,
     handoffToBot,

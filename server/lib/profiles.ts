@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { withMutex } from './mutex.js';
+import { resolveAgentWorkspace } from './agent-workspace.js';
 
 export interface Profile {
   id: string;
@@ -271,10 +272,26 @@ export function requestedProfileId(header: string | null | undefined, cookieHead
  * synchronous code path. The store read is a small JSON file already loaded on
  * every request path, so the sync form is the honest one.
  */
+/**
+ * Resolve the active profile.
+ *
+ * SECURITY: when the authenticated session carries a profile claim, that claim
+ * WINS and the client-supplied header/cookie are ignored entirely — a session
+ * bound to profile X must resolve to X, never to Y. The header/cookie path only
+ * applies when there is no session claim (auth disabled, or a session minted
+ * before profiles existed), and it can only name a profile the server knows.
+ */
 export function resolveActiveProfileIdSync(
   header?: string | null,
   cookieHeader?: string | null,
+  sessionProfileId?: string | null,
 ): string {
+  if (sessionProfileId) {
+    const exists = readProfileFile().profiles.some((p) => p.id === sessionProfileId);
+    // A session bound to a profile that was later deleted falls back to the
+    // default rather than becoming unbound.
+    return exists ? sessionProfileId : DEFAULT_PROFILE_ID;
+  }
   const requested = requestedProfileId(header, cookieHeader);
   if (requested) {
     const profiles = readProfileFile().profiles;
@@ -287,13 +304,36 @@ export function resolveActiveProfileIdSync(
 export async function resolveActiveProfileId(
   header?: string | null,
   cookieHeader?: string | null,
+  sessionProfileId?: string | null,
 ): Promise<string> {
-  return resolveActiveProfileIdSync(header, cookieHeader);
+  return resolveActiveProfileIdSync(header, cookieHeader, sessionProfileId);
 }
 
-/** Cookie header for `POST /api/profiles/activate`. */
+/** Cookie header for `POST /api/profiles/activate` (UX hint only; the session claim is authoritative). */
 export function profileCookieHeader(id: string): string {
   return `${PROFILE_COOKIE}=${encodeURIComponent(id)}; Path=/; SameSite=Lax; Max-Age=31536000`;
+}
+
+/**
+ * Active profile for a request, from the SIGNED session claim when present.
+ * Every route should use this rather than reading the header/cookie itself, so
+ * the session binding can't be bypassed route-by-route.
+ */
+export function activeProfileIdForRequest(c: {
+  req: { header: (name: string) => string | undefined };
+  get: (key: 'sessionPayload') => { pid?: string } | undefined;
+}): string {
+  const session = c.get('sessionPayload');
+  return resolveActiveProfileIdSync(
+    c.req.header(PROFILE_HEADER) ?? null,
+    c.req.header('cookie') ?? null,
+    session?.pid ?? null,
+  );
+}
+
+/** The signed session id, when the request has an authenticated session. */
+export function sessionIdForRequest(c: { get: (key: 'sessionPayload') => { sid?: string } | undefined }): string | null {
+  return c.get('sessionPayload')?.sid ?? null;
 }
 
 /* ── Agent → profile map ────────────────────────────────────────────── */
@@ -321,7 +361,16 @@ export function agentKeyForms(agentId: string): string[] {
   if (!trimmed) return [];
   forms.add(trimmed);
   const bare = agentIdFromSessionKey(trimmed);
-  if (bare) forms.add(bare);
+  if (bare) {
+    forms.add(bare);
+    forms.add(`agent:${bare}:main`);
+  } else {
+    // A bare id must also be findable under its session-key form: roster rows
+    // and locks store session keys, so looking up only the bare form would miss
+    // the agent entirely and fall through to "unowned" — which the default
+    // profile is allowed to read. Both directions are required.
+    forms.add(`agent:${trimmed}:main`);
+  }
   return [...forms];
 }
 
@@ -400,7 +449,69 @@ export function buildAgentProfileMap(): Map<string, string> {
 }
 
 /**
- * Profile owning an agent, or `null` when the agent is unowned (no lock and no
+ * Canonical default workspace root for an agent.
+ *
+ * Single source of truth shared with agent provisioning, so the path the file
+ * guard checks and the path a provisioned agent is given cannot diverge.
+ */
+export function defaultAgentWorkspaceRoot(agentId: string): string {
+  const base = process.env.NERVE_AGENT_WORKSPACE_ROOT?.trim()
+    || path.join(process.env.HOME || os.homedir(), '.openclaw');
+  return path.join(base, `workspace-${agentId}`);
+}
+
+/** Which agent owns a filesystem path, or null when the path is not inside any
+ * agent workspace.
+ *
+ * Used by the file routes, which take a bare path and no agent, to work out
+ * whose workspace a request is trying to read. Resolution goes through
+ * `resolveAgentWorkspace`, i.e. the same configured-workspace lookup the rest of
+ * the app uses, so a custom `workspace` in the gateway config is attributed
+ * correctly.
+ */
+export function agentIdOwningWorkspacePath(targetPath: string): string | null {
+  let resolved: string;
+  try {
+    resolved = path.resolve(targetPath);
+  } catch {
+    return null;
+  }
+  const candidates = new Set<string>();
+  // The adult's own agent is always a candidate: it is unowned by definition,
+  // but its workspace must still be attributed so other profiles cannot read it.
+  candidates.add('main');
+  for (const key of buildAgentProfileMap().keys()) {
+    const bare = agentIdFromSessionKey(key) ?? key;
+    if (bare) candidates.add(bare);
+  }
+  let locks: Record<string, string> = {};
+  try {
+    locks = readProfileFile().agentLocks;
+  } catch {
+    locks = {};
+  }
+  for (const key of Object.keys(locks)) {
+    const bare = agentIdFromSessionKey(key) ?? key;
+    if (bare) candidates.add(bare);
+  }
+  for (const agentId of candidates) {
+    // Check both the configured workspace and the default one: a provisioned
+    // agent may exist on disk before/without a gateway config entry.
+    const roots: string[] = [defaultAgentWorkspaceRoot(agentId)];
+    try {
+      roots.unshift(resolveAgentWorkspace(agentId).workspaceRoot);
+    } catch {
+      // Unresolvable agent — the default root is still checked.
+    }
+    for (const workspaceRoot of roots) {
+      const withSep = workspaceRoot.endsWith(path.sep) ? workspaceRoot : workspaceRoot + path.sep;
+      if (resolved === workspaceRoot || resolved.startsWith(withSep)) return agentId;
+    }
+  }
+  return null;
+}
+
+/** Profile owning an agent, or `null` when the agent is unowned (no lock and no
  * roster row). Callers must treat `null` explicitly — defaulting it to the
  * default profile is what let unlinked agents leak between profiles.
  */

@@ -40,9 +40,8 @@ import { isWorkspaceLocal } from '../lib/workspace-detect.js';
 import { gatewayFilesList, gatewayFilesGet, gatewayFilesSet } from '../lib/gateway-rpc.js';
 import {
   CrossProfileForbiddenError,
-  PROFILE_HEADER,
   assertAgentInProfile,
-  resolveActiveProfileId,
+  activeProfileIdForRequest,
 } from '../lib/profiles.js';
 
 const app = new Hono();
@@ -70,10 +69,7 @@ interface ScopedWorkspace {
 async function resolveScopedWorkspace(c: Context, agentId?: string): Promise<ScopedWorkspace> {
   // Privacy guard: naming an agent from another profile must fail closed
   // before any path is derived from it.
-  const activeProfileId = await resolveActiveProfileId(
-    c.req.header(PROFILE_HEADER) ?? null,
-    c.req.header('cookie') ?? null,
-  );
+  const activeProfileId = activeProfileIdForRequest(c);
   assertAgentInProfile(agentId, activeProfileId);
 
   const customRoot = (config.fileBrowserRoot || '').trim();

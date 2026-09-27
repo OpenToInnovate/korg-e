@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { withMutex } from './mutex.js';
 import { CrossProfileForbiddenError, DEFAULT_PROFILE_ID, claimAgent } from './profiles.js';
+import { toSessionKey } from './agent-provisioning.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -148,6 +149,24 @@ export function validateGroupMembers(memberBotIds: string[], bots: RosterBot[], 
  * rejected as cross-profile rather than silently filtered: the request named
  * a real id, it just isn't yours to read or edit.
  */
+/**
+ * Roster rows always store the FULL session key (`agent:<id>:main`).
+ *
+ * A bare agent id silently never matches a gateway session, so the bot renders
+ * in the sidebar but cannot be selected — the symptom Tony hit in production.
+ * Normalising here means every create/link/update path stores the same shape.
+ */
+function normalizeStoredAgentId(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return toSessionKey(trimmed);
+  } catch {
+    throw new RosterValidationError(`Invalid agent id: ${value}`);
+  }
+}
+
 function findScoped<T extends { id: string; profileId?: string | null }>(
   list: T[],
   id: string,
@@ -294,11 +313,12 @@ export async function createBot(input: CreateBotInput, profileId: string = DEFAU
     // Exclusivity at the source: an agent may be bound to bots in at most one
     // profile. Refuse the write rather than storing a duplicate binding.
     if (input.agentId) await claimAgent(input.agentId, profileId);
+    const storedAgentId = normalizeStoredAgentId(input.agentId);
     const now = Date.now();
     const bot: RosterBot = {
       id: uniqueId(`${slugify(name)}-${crypto.randomBytes(3).toString('hex')}`, new Set(data.bots.map((b) => b.id))),
       profileId,
-      agentId: input.agentId ?? null,
+      agentId: storedAgentId,
       sectionId: input.sectionId ?? null,
       avatar: input.avatar ?? '',
       name,
@@ -336,7 +356,7 @@ export async function updateBot(id: string, input: UpdateBotInput, profileId: st
     }
     if (input.agentId !== undefined) {
       if (input.agentId) await claimAgent(input.agentId, profileId);
-      bot.agentId = input.agentId;
+      bot.agentId = normalizeStoredAgentId(input.agentId);
     }
     if (input.avatar !== undefined) {
       if (input.avatar.length > 40 || (input.avatar !== '' && !/^[a-z0-9-]+$/.test(input.avatar))) {
@@ -573,4 +593,21 @@ export async function deleteSection(id: string, profileId: string = DEFAULT_PROF
 /** Move a bot to a section (or Unassigned when sectionId is null). */
 export async function moveBotToSection(botId: string, sectionId: string | null, profileId: string = DEFAULT_PROFILE_ID): Promise<RosterBot> {
   return updateBot(botId, { sectionId }, profileId);
+}
+
+/**
+ * Every agent id referenced by ANY roster row, across all profiles.
+ *
+ * Used by the "available agents" picker to fail closed: an agent named by any
+ * roster row is treated as bound, even if that row is malformed or its profile
+ * is missing, so a bad row can never make another profile's agent look free.
+ * Ids are returned verbatim (roster rows store full session keys).
+ */
+export function listAllRosterAgentIds(): string[] {
+  const data = readData();
+  const out = new Set<string>();
+  for (const bot of data.bots) {
+    if (typeof bot.agentId === 'string' && bot.agentId.trim()) out.add(bot.agentId);
+  }
+  return [...out];
 }

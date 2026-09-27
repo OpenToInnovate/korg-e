@@ -9,7 +9,7 @@
  * to recover the model and initial thinking level.
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -19,6 +19,11 @@ import { config } from '../lib/config.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { spawnSubagent } from '../lib/subagent-spawn.js';
 import { normalizeAgentId } from '../lib/agent-workspace.js';
+import {
+  CrossProfileForbiddenError,
+  activeProfileIdForRequest,
+  assertAgentInProfile,
+} from '../lib/profiles.js';
 
 const app = new Hono();
 const CRON_SESSION_RE = /^agent:[^:]+:cron:[^:]+(?::run:.+)?$/;
@@ -72,6 +77,26 @@ async function loadSessionStore(): Promise<Record<string, StoredSessionSummary |
 function getAgentIdFromSessionKey(sessionKey: string): string {
   const match = sessionKey.match(/^agent:([^:]+):/);
   return match?.[1] || 'main';
+}
+
+/**
+ * Fail-closed profile guard for session reads.
+ *
+ * These routes take a client-supplied `agentId`/`sessionKey` and resolve a
+ * sessions dir or transcript from it, so without this check any authenticated
+ * client could read another profile's transcripts and attachments. Returns a
+ * 403 response to return, or null when access is permitted.
+ */
+function guardAgentProfile(c: Context, agentId: string | undefined): Response | null {
+  try {
+    assertAgentInProfile(agentId, activeProfileIdForRequest(c));
+    return null;
+  } catch (err) {
+    if (err instanceof CrossProfileForbiddenError) {
+      return c.json({ error: 'cross_profile_forbidden' }, 403);
+    }
+    throw err;
+  }
 }
 
 function resolveSessionsDir(agentId?: string): string {
@@ -212,6 +237,9 @@ app.get('/api/sessions/media', rateLimitGeneral, async (c) => {
     return c.json({ ok: false, error: 'Invalid media lookup params' }, 400);
   }
 
+  const guard = guardAgentProfile(c, getAgentIdFromSessionKey(sessionKey));
+  if (guard) return guard;
+
   try {
     const store = await loadSessionStore();
     const sessionId = store[sessionKey]?.sessionId;
@@ -291,6 +319,9 @@ app.get('/api/sessions/runtime', rateLimitGeneral, async (c) => {
     return c.json({ ok: false, error: 'sessionKey is required' }, 400);
   }
 
+  const guard = guardAgentProfile(c, getAgentIdFromSessionKey(sessionKey));
+  if (guard) return guard;
+
   const sessionsDir = resolveSessionsDir(getAgentIdFromSessionKey(sessionKey));
   const store = await loadSessionStoreFromDir(sessionsDir).catch(() => ({} as Record<string, StoredSessionSummary | undefined>));
   const session = store[sessionKey];
@@ -328,6 +359,9 @@ app.get('/api/sessions/:id/model', rateLimitGeneral, async (c) => {
   if (!/^[0-9a-f-]{36}$/.test(sessionId)) {
     return c.json({ ok: false, error: 'Invalid session ID' }, 400);
   }
+
+  const guard = guardAgentProfile(c, agentId);
+  if (guard) return guard;
 
   const transcriptPath = await findTranscript(sessionId, resolveSessionsDir(agentId));
   if (!transcriptPath) {

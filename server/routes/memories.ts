@@ -24,9 +24,8 @@ import { isWorkspaceLocal } from '../lib/workspace-detect.js';
 import { gatewayFilesGet, gatewayFilesSet } from '../lib/gateway-rpc.js';
 import {
   CrossProfileForbiddenError,
-  PROFILE_HEADER,
   assertAgentInProfile,
-  resolveActiveProfileIdSync,
+  activeProfileIdForRequest,
 } from '../lib/profiles.js';
 
 const app = new Hono();
@@ -150,10 +149,7 @@ function resolveWorkspaceOrResponse(c: Context, agentId?: string): AgentWorkspac
   try {
     // Privacy guard: a request naming an agent from another profile must not
     // reach that agent's memory, even though the store is per-agent already.
-    const activeProfileId = resolveActiveProfileIdSync(
-      c.req.header(PROFILE_HEADER) ?? null,
-      c.req.header('cookie') ?? null,
-    );
+    const activeProfileId = activeProfileIdForRequest(c);
     assertAgentInProfile(agentId, activeProfileId);
     return resolveAgentWorkspace(agentId);
   } catch (err) {

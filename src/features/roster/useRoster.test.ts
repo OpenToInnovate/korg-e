@@ -28,13 +28,13 @@ const ALEX_ROSTER = {
   sections: [],
 };
 
+let calls: FetchCall[];
+
+beforeEach(() => { calls = []; });
+
+afterEach(() => { vi.restoreAllMocks(); });
+
 describe('useRoster — profile scoping', () => {
-  let calls: FetchCall[];
-
-  beforeEach(() => { calls = []; });
-
-  afterEach(() => { vi.restoreAllMocks(); });
-
   it('exposes the profileId the roster belongs to', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       calls.push({ url });
@@ -178,5 +178,86 @@ describe('useRoster — profile scoping', () => {
     act(() => { result.current.clearForProfileSwitch(); });
 
     expect(result.current.ownedAgentIds).toEqual([]);
+  });
+});
+
+/**
+ * PROFILE-BINDING CONTRACT — the client must reflect the SERVER's decision and
+ * must never let a browser-asserted profile widen access or read as "empty".
+ */
+describe('useRoster — access refusal is never shown as an empty profile', () => {
+  beforeEach(() => { calls = []; });
+
+  it('marks a 403 as denied and shows no roster data', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push({ url });
+      return jsonRes({ error: 'forbidden' }, { ok: false, status: 403 });
+    }));
+
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.access).toBe('denied');
+    expect(result.current.roster.bots).toEqual([]);
+    expect(result.current.error).toMatch(/do not have access/i);
+  });
+
+  it('REGRESSION: a refusal drops the previous profile’s rows from screen', async () => {
+    let denied = false;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push({ url });
+      if (String(url).includes('agent-ownership')) {
+        return denied ? jsonRes({ error: 'forbidden' }, { ok: false, status: 403 }) : jsonRes({ profileId: 'p1', ownedAgentIds: ['mir-tutor'] });
+      }
+      return denied ? jsonRes({ error: 'forbidden' }, { ok: false, status: 403 }) : jsonRes(SAM_ROSTER);
+    }));
+
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.roster.bots).toHaveLength(1));
+    expect(result.current.access).toBe('ok');
+
+    // Server refuses after a switch.
+    denied = true;
+    await act(async () => { await result.current.refresh(); });
+
+    // Stale rows must not linger, and it must not read as an empty profile.
+    expect(result.current.roster.bots).toEqual([]);
+    expect(result.current.ownedAgentIds).toEqual([]);
+    expect(result.current.access).toBe('denied');
+  });
+
+  it('clears roster rows on any transport failure too', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push({ url });
+      return jsonRes({ error: 'boom' }, { ok: false, status: 500 });
+    }));
+
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.access).toBe('error');
+    expect(result.current.roster.bots).toEqual([]);
+  });
+
+  it('surfaces an ownership failure instead of silently showing no agents', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push({ url });
+      if (String(url).includes('agent-ownership')) return jsonRes({ error: 'nope' }, { ok: false, status: 500 });
+      return jsonRes(SAM_ROSTER);
+    }));
+
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.ownedAgentIds).toEqual([]);
+    // Fail closed, but say so — an unexplained empty list reads as "no agents".
+    expect(result.current.error).toMatch(/could not verify which agents belong/i);
+  });
+
+  it('does not treat a denial as a normal error state', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonRes({ error: 'forbidden' }, { ok: false, status: 403 })));
+    const { result } = renderHook(() => useRoster());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.access).not.toBe('ok');
   });
 });

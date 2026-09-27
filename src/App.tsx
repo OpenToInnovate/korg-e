@@ -41,6 +41,7 @@ import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/feat
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { useRoster } from '@/features/roster/useRoster';
 import { useWorkingSignal } from '@/features/chat/useWorkingSignal';
+import { createBotWithAgent } from '@/features/roster/createBotWithAgent';
 import { ProfileSwitcher } from '@/features/profiles/ProfileSwitcher';
 import { useProfiles } from '@/features/profiles/useProfiles';
 import { isCorgiVariant } from '@/components/corgi/corgiVariants';
@@ -342,6 +343,16 @@ export default function App({ onLogout }: AppProps) {
     setCurrentSession('');
   }, [currentSession, ownedAgentIdSet, isSessionOwned, setCurrentSession]);
 
+  // Agents that exist but are not bound to this profile, for the "link
+  // existing agent" choice. Loaded only while the create dialog is open.
+  // NOTE: these must stay PRIMITIVES. An earlier version kept them in one
+  // object (`setLinkable({agents, error})`), which allocates a new reference on
+  // every effect run. React only bails out of a re-render when the new state is
+  // Object.is-equal, so a fresh object re-rendered forever and spun the App
+  // test worker until vitest killed it. Never put these in an object.
+  const [linkableAgents, setLinkableAgents] = useState<{ id: string; name?: string }[] | null>(null);
+  const [linkableAgentsError, setLinkableAgentsError] = useState<string | null>(null);
+
   // Bot profile linked to the open conversation (drives its corgi + collar).
   const currentBot = useMemo(
     () => roster.roster.bots.find((b) => b.agentId && b.agentId === currentSession) ?? null,
@@ -410,6 +421,36 @@ export default function App({ onLogout }: AppProps) {
       if (isCompactLayout) setMobileView('home');
     }, [isCompactLayout, refreshSessions, roster, setCurrentSession]),
   });
+
+  // `listLinkable` is stable (useCallback with []), whereas `roster` is a new
+  // object on every render — depending on the latter re-ran the effect below
+  // (and its fetch) on every single render. It must be declared HERE, at
+  // component scope: a dep array is evaluated outside the effect callback, so
+  // a `const` declared inside that callback is a temporal-dead-zone error.
+  const listLinkable = roster.listLinkableAgents;
+
+  // Resolve linkable agents for the "link existing agent" choice. This must sit
+  // after BOTH botDialog and profiles are declared — reading either earlier is
+  // a temporal-dead-zone error during render.
+  useEffect(() => {
+    if (!botDialog.open || botDialog.bot || !profiles.activeProfileId) {
+      setLinkableAgents(null);
+      setLinkableAgentsError(null);
+      return;
+    }
+    let cancelled = false;
+    void listLinkable(profiles.activeProfileId)
+      .then((list) => { if (!cancelled) { setLinkableAgents(list); setLinkableAgentsError(null); } })
+      // A failure (e.g. the available-agents route not existing yet) must be
+      // shown, not swallowed into "no agents to link".
+      .catch((err) => {
+        if (!cancelled) {
+          setLinkableAgents(null);
+          setLinkableAgentsError(err instanceof Error ? err.message : 'Could not list agents to link');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [botDialog.open, botDialog.bot, profiles.activeProfileId, listLinkable]);
 
   // UI state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -785,24 +826,25 @@ export default function App({ onLogout }: AppProps) {
   // live session and links it back to the profile.
   // Create a bot profile and (unless adopting an existing agent) spin up a session.
   const createBotFromValues = useCallback(async (values: BotFormValues): Promise<RosterBot> => {
-    const { agentId, enabledSkills, ...profile } = values;
-    if (agentId) {
-      return roster.createBot({ ...profile, agentId, enabledSkills });
-    }
-    const bot = await roster.createBot({ ...profile, enabledSkills });
-    const task = values.description
-      ? `You are ${values.name}. ${values.description} Introduce yourself briefly and ask what to work on first.`
-      : `You are ${values.name}, a helpful teammate. Introduce yourself briefly and ask what to work on first.`;
-    try {
-      const key = buildAgentRootSessionKey(values.name, sessions.map(getSessionKey));
-      await handleSpawnSession({ kind: 'root', task, agentName: values.name });
-      await roster.updateBot(bot.id, { agentId: key }).catch(() => undefined);
-      if (isCompactLayout) setMobileView('chat');
-    } catch {
-      // Profile is saved even when the spawn fails; the user can retry from the row.
-    }
+    const profileId = profiles.activeProfileId;
+    if (!profileId) throw new Error('No active profile — pick a profile before adding a bot.');
+
+    // Provision the backing agent BEFORE the roster row, so a new bot is
+    // always usable and a failure never leaves a shell behind.
+    const bot = await createBotWithAgent({
+      roster,
+      values,
+      profileId,
+      onLinked: () => refreshSessions().catch(() => undefined),
+    });
+
+    // The agent is registered in the gateway config, so its session appears
+    // when the gateway picks it up. We deliberately do NOT spawn a second
+    // agent here — that would mint a different key and reintroduce the bug.
+    await refreshSessions().catch(() => undefined);
+    if (isCompactLayout) setMobileView('chat');
     return bot;
-  }, [roster, sessions, handleSpawnSession, isCompactLayout]);
+  }, [profiles.activeProfileId, roster, refreshSessions, isCompactLayout]);
 
   const handleBotDialogSave = useCallback(async (values: BotFormValues) => {
     if (botDialog.bot) {
@@ -1426,6 +1468,8 @@ export default function App({ onLogout }: AppProps) {
         <BotDialog
           bot={botDialog.bot}
           bots={roster.roster.bots}
+          linkableAgents={linkableAgents}
+          linkableAgentsError={linkableAgentsError}
           onClose={() => setBotDialog({ open: false })}
           onSave={handleBotDialogSave}
           onCreateGroup={async (values) => {
