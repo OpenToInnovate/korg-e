@@ -1,25 +1,26 @@
 {
-  "name": "openclaw-nerve",
-  "version": "1.5.3",
-  "description": "Web interface for OpenClaw — chat, voice input, TTS, and agent monitoring in the browser",
+  "name": "korg-e",
+  "version": "0.50.0",
+  "description": "Korg-e — a web cockpit for OpenClaw: chat, voice, per-person profiles, and agent monitoring in the browser",
   "license": "MIT",
   "engines": {
     "node": ">=22.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/daggerhashimoto/openclaw-nerve.git"
+    "url": "https://github.com/OpenToInnovate/korg-e.git"
   },
-  "homepage": "https://github.com/daggerhashimoto/openclaw-nerve",
+  "homepage": "https://github.com/OpenToInnovate/korg-e",
   "keywords": [
     "openclaw",
-    "nerve",
+    "korg-e",
     "chat",
     "terminal",
     "ai",
     "agent",
     "tts",
-    "voice"
+    "voice",
+    "profiles"
   ],
   "type": "module",
   "scripts": {
@@ -109,5 +110,8 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
     "vitest": "^4.0.18"
+  },
+  "bugs": {
+    "url": "https://github.com/OpenToInnovate/korg-e/issues"
   }
 }

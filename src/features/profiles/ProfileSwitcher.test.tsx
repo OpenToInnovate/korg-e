@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ProfileSwitcher } from './ProfileSwitcher';
 import { useProfiles, type Profile } from './useProfiles';
-import { useSessionContext } from '@/contexts/SessionContext';
 
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionContext: () => ({ markSessionRead: vi.fn(), markSessionUnread: vi.fn() }),

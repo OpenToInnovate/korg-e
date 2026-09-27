@@ -16,7 +16,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { gatewayRpcCall } from '../lib/gateway-rpc.js';
-import { PROFILE_HEADER, agentProfileId } from '../lib/profiles.js';
+import { PROFILE_HEADER } from '../lib/profiles.js';
 import {
   BRIDGE_DEFAULT_TTL_HOURS,
   BRIDGE_MAX_TTL_HOURS,

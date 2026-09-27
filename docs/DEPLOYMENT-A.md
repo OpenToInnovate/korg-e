@@ -1,6 +1,6 @@
 # Deployment: Local (Same Machine)
 
-Gateway and Nerve on the same host. This is the default setup and has the fewest moving parts.
+Gateway and Korg-e on the same host. This is the default setup and has the fewest moving parts.
 
 ## Topology
 
@@ -16,10 +16,10 @@ Browser (localhost) → Nerve (127.0.0.1:3080) → Gateway (127.0.0.1:18789)
 
 ## Setup
 
-### 1. Install Nerve
+### 1. Install Korg-e
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OpenToInnovate/korg-e/main/install.sh | bash
 ```
 
 ### 2. Run setup if needed
@@ -76,12 +76,12 @@ openclaw devices approve <requestId>
 
 ### Browser keeps old credentials
 
-**Fix:** Clear site data or remove `localStorage.oc-config`. Nerve stores the gateway URL and any manually-entered token there for reconnects, so a stale manual token can override the official managed connection path.
+**Fix:** Clear site data or remove `localStorage.oc-config`. Korg-e stores the gateway URL and any manually-entered token there for reconnects, so a stale manual token can override the official managed connection path.
 
 ## Security notes
 
 - Keep `HOST=127.0.0.1` for local-only deployments
-- If you expose Nerve (`HOST=0.0.0.0`), enable `NERVE_AUTH=true`
+- If you expose Korg-e (`HOST=0.0.0.0`), enable `NERVE_AUTH=true`
 - See [Security](SECURITY.md) for the full threat model
 
 ## Recommendation

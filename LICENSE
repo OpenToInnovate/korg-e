@@ -1,6 +1,12 @@
 MIT License
 
 Copyright (c) 2025-2026 Nerve contributors
+Copyright (c) 2026 Korg-e contributors
+
+This project is a derivative work of Nerve (https://github.com/daggerhashimoto/openclaw-nerve),
+licensed under the MIT License. The original copyright notice and permission notice
+above are retained as required by that license. Modifications are the work of the
+Korg-e contributors.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

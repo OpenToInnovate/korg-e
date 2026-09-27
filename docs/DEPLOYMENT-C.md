@@ -4,9 +4,9 @@ This guide covers two very different cloud topologies.
 
 If you only remember one thing, remember this:
 
-> **Remote browser access does not automatically mean limited Nerve. Split-host workspace locality does.**
+> **Remote browser access does not automatically mean limited Korg-e. Split-host workspace locality does.**
 
-Same-host cloud deployment can preserve near-full deployment-A behavior. Split-host cloud deployment cannot, unless the Nerve host also has direct access to the same workspace filesystem.
+Same-host cloud deployment can preserve near-full deployment-A behavior. Split-host cloud deployment cannot, unless the Korg-e host also has direct access to the same workspace filesystem.
 
 ## Topology options
 
@@ -16,7 +16,7 @@ Same-host cloud deployment can preserve near-full deployment-A behavior. Split-h
 Browser (remote) → Nerve cloud → Gateway cloud (same machine)
 ```
 
-This is the cloud topology with the best feature parity. Nerve, the gateway, and the workspace live together.
+This is the cloud topology with the best feature parity. Korg-e, the gateway, and the workspace live together.
 
 ### Split hosts, partial parity
 
@@ -28,7 +28,7 @@ This behaves much more like deployment B. Chat can still work well, but workspac
 
 ## Choose based on what you need
 
-| Cloud mode | Nerve ↔ gateway | Nerve ↔ workspace | Result |
+| Cloud mode | Korg-e ↔ gateway | Korg-e ↔ workspace | Result |
 |---|---|---|---|
 | Same host | Local | Local | Best cloud experience. Closest to deployment A |
 | Split hosts | Remote | Usually remote | Partial parity only. Inherits deployment-B style limitations |
@@ -37,10 +37,10 @@ If you care about full Files, Memory, Config, raw previews, and normal file oper
 
 ## Same-host setup
 
-### 1. Install Nerve
+### 1. Install Korg-e
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OpenToInnovate/korg-e/main/install.sh | bash
 ```
 
 ### 2. Run setup for remote browser access
@@ -55,7 +55,7 @@ Recommended choices:
 - Access mode: **Network** or **Custom**
 - `HOST=0.0.0.0`
 - **Enable authentication**
-- use HTTPS directly or put Nerve behind a reverse proxy with TLS
+- use HTTPS directly or put Korg-e behind a reverse proxy with TLS
 
 ### 3. Start the service
 
@@ -66,7 +66,7 @@ sudo systemctl status nerve.service
 
 ### 4. Set up TLS
 
-Put Nerve behind a reverse proxy such as Nginx, Caddy, or Traefik, or serve HTTPS directly with local certs.
+Put Korg-e behind a reverse proxy such as Nginx, Caddy, or Traefik, or serve HTTPS directly with local certs.
 
 If you terminate TLS in a reverse proxy, also set `TRUSTED_PROXIES` in `.env` so rate limiting and client-IP resolution use the real client address instead of the proxy hop.
 
@@ -87,13 +87,13 @@ This is the important part: remote browser access changes the **trust and auth m
 ### What changes from deployment A
 
 - the browser is no longer loopback, so **auth should be on**
-- the browser should reach Nerve over HTTPS
+- the browser should reach Korg-e over HTTPS
 - if you use a reverse proxy, set `TRUSTED_PROXIES` correctly
-- server-side gateway token injection depends on the authenticated Nerve session for remote clients
+- server-side gateway token injection depends on the authenticated Korg-e session for remote clients
 
 ### What does **not** need to degrade
 
-Because Nerve and the gateway share the same host and workspace, these can still have normal deployment-A style behavior:
+Because Korg-e and the gateway share the same host and workspace, these can still have normal deployment-A style behavior:
 
 - full file browser
 - nested directories
@@ -103,16 +103,16 @@ Because Nerve and the gateway share the same host and workspace, these can still
 - full memory parsing from local `MEMORY.md` plus daily files
 - local watcher-based workspace updates
 
-In other words: **same-host deployment C is the recommended remote-access topology if you want real Nerve, not a reduced control panel.**
+In other words: **same-host deployment C is the recommended remote-access topology if you want real Korg-e, not a reduced control panel.**
 
 ## Split-host setup
 
-Use this only when you have a specific infrastructure reason to separate Nerve and the gateway.
+Use this only when you have a specific infrastructure reason to separate Korg-e and the gateway.
 
-### 1. Install Nerve with remote gateway settings
+### 1. Install Korg-e with remote gateway settings
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/install.sh \
+curl -fsSL https://raw.githubusercontent.com/OpenToInnovate/korg-e/main/install.sh \
   | bash -s -- --gateway-url https://gw.example.com --gateway-token <token> --skip-setup
 ```
 
@@ -129,9 +129,9 @@ Recommended choices:
 - **Enable authentication**
 - configure TLS or a reverse proxy
 
-### 2. Point Nerve at the remote gateway
+### 2. Point Korg-e at the remote gateway
 
-In `.env` on the Nerve host:
+In `.env` on the Korg-e host:
 
 ```bash
 GATEWAY_URL=https://gw.example.com
@@ -139,9 +139,9 @@ WS_ALLOWED_HOSTS=gw.example.com
 NERVE_PUBLIC_ORIGIN=https://nerve.example.com
 ```
 
-### 3. Allow the public Nerve origin on the gateway host
+### 3. Allow the public Korg-e origin on the gateway host
 
-On the gateway host, add the Nerve origin to `gateway.controlUi.allowedOrigins`:
+On the gateway host, add the Korg-e origin to `gateway.controlUi.allowedOrigins`:
 
 ```text
 https://nerve.example.com
@@ -165,7 +165,7 @@ Restart both services after making the changes.
 
 This is **not** the same as same-host cloud deployment.
 
-Because the Nerve host usually cannot reach the gateway host's workspace filesystem directly, split-host deployment inherits the same core limits as deployment B.
+Because the Korg-e host usually cannot reach the gateway host's workspace filesystem directly, split-host deployment inherits the same core limits as deployment B.
 
 ### What still works well
 
@@ -186,8 +186,8 @@ Because the Nerve host usually cannot reach the gateway host's workspace filesys
 
 If you need these features, do one of the following instead:
 
-1. move Nerve onto the same host as the gateway
-2. mount the same workspace filesystem onto the Nerve host
+1. move Korg-e onto the same host as the gateway
+2. mount the same workspace filesystem onto the Korg-e host
 3. stop using split-host and use deployment A or same-host deployment C
 
 ## Validation
@@ -227,21 +227,21 @@ Verify in the browser:
 
 This can still happen when:
 
-- the browser is pointed at a custom gateway URL instead of the official Nerve-managed one
+- the browser is pointed at a custom gateway URL instead of the official Korg-e-managed one
 - the request path is not trusted for server-side token injection
 - stale browser config is overriding the official URL path
 
 ### Chat works, but workspace-adjacent panels fail with `origin not allowed`
 
-This is usually an origin mismatch between Nerve's public URL and `gateway.controlUi.allowedOrigins` on the gateway host.
+This is usually an origin mismatch between Korg-e's public URL and `gateway.controlUi.allowedOrigins` on the gateway host.
 
-**Fix:** set `NERVE_PUBLIC_ORIGIN` to the exact public Nerve origin and add that same origin to the gateway allowlist.
+**Fix:** set `NERVE_PUBLIC_ORIGIN` to the exact public Korg-e origin and add that same origin to the gateway allowlist.
 
 ### Split-host install feels weaker than expected
 
 That is not your imagination.
 
-Split-host cloud deployment loses local workspace access unless you provide it yourself. If you want full Nerve behavior, use same-host cloud deployment.
+Split-host cloud deployment loses local workspace access unless you provide it yourself. If you want full Korg-e behavior, use same-host cloud deployment.
 
 ## Recommendation
 

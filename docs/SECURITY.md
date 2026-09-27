@@ -1,6 +1,6 @@
 # Security
 
-Nerve is designed as a **local-first** web UI for an AI agent. Its security model assumes the server runs on a trusted machine and is accessed by its owner. It is **not** designed for multi-tenant or public-internet deployment without an additional reverse proxy and authentication layer.
+Korg-e is designed as a **local-first** web UI for an AI agent. Its security model assumes the server runs on a trusted machine and is accessed by its owner. It is **not** designed for multi-tenant or public-internet deployment without an additional reverse proxy and authentication layer.
 
 ---
 
@@ -45,15 +45,28 @@ Nerve is designed as a **local-first** web UI for an AI agent. Its security mode
 
 ### Out of Scope
 
-- **Multi-user authentication** — Nerve supports single-user password authentication. Multi-user accounts with roles are not yet implemented.
+- **Multi-user authentication** — Korg-e supports single-user password authentication. Multi-user accounts with roles are not yet implemented.
 - **End-to-end encryption** — TLS covers transport; at-rest encryption of memory files or session data is not provided.
 - **DDoS protection** — The in-memory rate limiter handles casual abuse but is not designed for sustained attacks. Use a reverse proxy (nginx, Cloudflare) for production exposure.
+
+### Profiles are a data boundary, not an authentication boundary
+
+Korg-e adds per-person profiles so one household member's agents, chats, and memories are not
+shown to another. Those boundaries are enforced server-side: the active profile is held in a
+cookie, roster responses are filtered by it, an agent has exactly one owning profile, and a
+cross-profile read is refused at the route.
+
+This is **data isolation, not authentication.** Profiles assume a single trusted operator who
+already has access to the machine and the shared password. Anyone who can sign in can switch to any
+profile. Do not treat profiles as a substitute for separate accounts, and do not rely on them to
+contain a hostile user on a shared host. Anyone with filesystem access to `~/.nerve` can read every
+profile's data directly, bypassing the UI entirely.
 
 ---
 
 ## Authentication & Access Control
 
-Nerve includes a built-in session-cookie-based authentication layer that can be enabled via the `NERVE_AUTH` environment variable.
+Korg-e includes a built-in session-cookie-based authentication layer that can be enabled via the `NERVE_AUTH` environment variable.
 
 ### When Auth is Disabled (default for localhost)
 
@@ -61,7 +74,7 @@ Security is enforced through network-level controls:
 
 1. **Localhost binding** — The server binds to `127.0.0.1` by default. Only local processes can connect.
 2. **CORS allowlist** — Browsers enforce the Origin check. Only configured origins receive CORS headers.
-3. **Gateway token isolation** — The sensitive `GATEWAY_TOKEN` is never sent to the browser. Instead, Nerve injects it server-side into the WebSocket connection upgrade for trusted clients.
+3. **Gateway token isolation** — The sensitive `GATEWAY_TOKEN` is never sent to the browser. Instead, Korg-e injects it server-side into the WebSocket connection upgrade for trusted clients.
 4. **Client config persistence** — The frontend stores the gateway URL and optional manual token in `localStorage` as `oc-config`. Trusted official-gateway flows usually keep the token empty because server-side injection handles auth.
 
 ### When Auth is Enabled
@@ -98,10 +111,10 @@ Users who haven't set a dedicated password can authenticate using their existing
 
 ### Recommendations for Network Access
 
-When exposing Nerve to a network (`HOST=0.0.0.0`):
+When exposing Korg-e to a network (`HOST=0.0.0.0`):
 - **Enable authentication** — the setup wizard prompts for this automatically
 - Using a VPN (Tailscale, WireGuard) adds an additional layer of security
-- Placing Nerve behind a reverse proxy with HTTPS is recommended for production
+- Placing Korg-e behind a reverse proxy with HTTPS is recommended for production
 - The gateway token can serve as an immediate fallback password
 
 ---
@@ -294,7 +307,7 @@ This prevents the proxy from being used to connect to arbitrary external hosts.
 
 ### Token Injection
 
-Nerve performs **server-side token injection** to provide a zero-config connection experience for local and authenticated users without exposing the `GATEWAY_TOKEN` to the browser storage. Trusted-proxy configuration only affects how Nerve interprets forwarded client IPs, for example for loopback detection and rate limiting. It does not grant authentication by itself.
+Korg-e performs **server-side token injection** to provide a zero-config connection experience for local and authenticated users without exposing the `GATEWAY_TOKEN` to the browser storage. Trusted-proxy configuration only affects how Korg-e interprets forwarded client IPs, for example for loopback detection and rate limiting. It does not grant authentication by itself.
 
 **Injection Logic:**
 1. `GET /api/connect-defaults` returns the official gateway WebSocket URL, `token: null`, and a `serverSideAuth` flag.
@@ -311,19 +324,19 @@ This keeps the managed gateway token on the server while still allowing explicit
 
 OpenClaw 2026.2.19+ requires a signed device identity (Ed25519 keypair) for WebSocket connections to receive `operator.read` / `operator.write` scopes. Plain token authentication alone grants zero scopes.
 
-Nerve generates a persistent device identity on first start (stored at `~/.nerve/device-identity.json`) and injects it into the connect handshake. The gateway always stays on loopback (`127.0.0.1`) — Nerve proxies all external connections through its WS proxy.
+Korg-e generates a persistent device identity on first start (stored at `~/.nerve/device-identity.json`) and injects it into the connect handshake. The gateway always stays on loopback (`127.0.0.1`) — Korg-e proxies all external connections through its WS proxy.
 
-**Normal setup path:** the setup wizard now pre-pairs Nerve's device identity while it is configuring the gateway, so a fresh install usually does **not** require a manual `openclaw devices approve` step.
+**Normal setup path:** the setup wizard now pre-pairs Korg-e's device identity while it is configuring the gateway, so a fresh install usually does **not** require a manual `openclaw devices approve` step.
 
 **Manual approval is fallback / recovery guidance:**
 
-1. Start Nerve and open the UI in a browser
+1. Start Korg-e and open the UI in a browser
 2. If the device is still pending, list requests: `openclaw devices list`
-3. Approve the Nerve device: `openclaw devices approve <requestId>`
+3. Approve the Korg-e device: `openclaw devices approve <requestId>`
 
 If the device is rejected (for example after a gateway reset), the proxy falls back to token-only auth. The connection succeeds but with reduced scopes, and chat or tool calls may fail with "missing scope" errors until the device is approved again.
 
-**Architecture:** `Browser (remote) → Nerve (0.0.0.0:3080) → WS proxy → Gateway (127.0.0.1:18789)`. The gateway never needs to bind to LAN or be directly network-accessible.
+**Architecture:** `Browser (remote) → Korg-e (0.0.0.0:3080) → WS proxy → Gateway (127.0.0.1:18789)`. The gateway never needs to bind to LAN or be directly network-accessible.
 
 ---
 
@@ -358,7 +371,7 @@ Multiple layers prevent directory traversal attacks:
 
 ## TLS / HTTPS
 
-Nerve automatically starts an HTTPS server alongside HTTP when certificates are present:
+Korg-e automatically starts an HTTPS server alongside HTTP when certificates are present:
 
 ```
 certs/cert.pem    # X.509 certificate
@@ -408,4 +421,13 @@ The setup wizard:
 
 ## Reporting Vulnerabilities
 
-If you find a security issue, please open a GitHub issue or contact the maintainers directly. Do not disclose vulnerabilities publicly before they are addressed.
+Report suspected vulnerabilities privately via
+[GitHub Security Advisories](https://github.com/OpenToInnovate/korg-e/security/advisories/new) on
+this repository. Please do not open a public issue for an unfixed vulnerability.
+
+Include the affected version, reproduction steps, and impact — particularly if the issue crosses a
+profile boundary, exposes one person's data to another, or lets an agent prompt escalate into
+mutating the gateway.
+
+**Scope note:** Korg-e is a UI layer. Vulnerabilities in the OpenClaw gateway itself should be
+reported to the OpenClaw project; this project only tracks issues in the code in this repository.

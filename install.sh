@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────
-# Nerve Installer — one-command setup for the Nerve web interface
+# Korg-e Installer — one-command setup for the Korg-e web interface
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/daggerhashimoto/openclaw-nerve/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/OpenToInnovate/korg-e/main/install.sh | bash
 #
 # Or with options:
-#   curl -fsSL ... | bash -s -- --dir ~/nerve --version v1.4.4
+#   curl -fsSL ... | bash -s -- --dir ~/nerve --version v0.50.0
 #   curl -fsSL ... | bash -s -- --dir ~/nerve --branch main
 #   curl -fsSL ... | bash -s -- --gateway-url https://gw.example.com --gateway-token <token> --skip-setup
 # ──────────────────────────────────────────────────────────────────────
@@ -29,11 +29,14 @@ cleanup() {
 trap cleanup EXIT
 
 # ── Defaults ──────────────────────────────────────────────────────────
+# Operational identifiers (NERVE_INSTALL_DIR, ~/nerve, nerve.service) are
+# intentionally left as-is so existing installs and their updaters keep
+# working. Only the distribution source and default branch follow the fork.
 INSTALL_DIR="${NERVE_INSTALL_DIR:-${HOME}/nerve}"
-BRANCH="master"
+BRANCH="main"
 BRANCH_EXPLICIT=false
 VERSION=""
-REPO="https://github.com/daggerhashimoto/openclaw-nerve.git"
+REPO="https://github.com/OpenToInnovate/korg-e.git"
 NODE_MIN=22
 SKIP_SETUP=false
 DRY_RUN=false

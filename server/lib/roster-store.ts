@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { withMutex } from './mutex.js';
-import { AgentAlreadyBoundError, CrossProfileForbiddenError, DEFAULT_PROFILE_ID, claimAgent } from './profiles.js';
+import { CrossProfileForbiddenError, DEFAULT_PROFILE_ID, claimAgent } from './profiles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -464,7 +464,6 @@ export async function updateGroup(id: string, input: UpdateGroupInput, profileId
   return withMutex('roster', async () => {
     const data = readData();
     const group = findScoped(data.groups, id, profileId, 'Group');
-    const scopedBots = inProfile(data.bots, profileId);
     if (input.name !== undefined) {
       const name = input.name.trim();
       if (!name || name.length > 100) throw new RosterValidationError('Group name must be 1–100 characters');

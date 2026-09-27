@@ -16,7 +16,6 @@ import {
   updateProfile,
   agentProfileId,
   assertAgentInProfile,
-  claimAgent,
   ownedAgentIdsForProfile,
   buildAgentProfileMap,
 } from './profiles.js';

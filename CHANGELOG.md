@@ -4,7 +4,67 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+Versions `1.x` and earlier are [Nerve](https://github.com/daggerhashimoto/openclaw-nerve) releases,
+retained here for historical reference. Korg-e begins at `0.50.0`.
+
 ## [Unreleased]
+
+## [0.50.0] - 2026-09-27
+
+First Korg-e release. Forked from Nerve 1.5.3 (MIT); full commit history preserved.
+
+### Privacy
+
+- **Per-person profiles.** Independent sets of bots and groups per profile, with the active profile
+  held in a cookie so every roster response is filtered server-side.
+- **Single-owner agents.** An agent belongs to exactly one profile; there is no shared ownership.
+- **Fail-closed ownership.** An unowned agent is reachable only from the default profile, never
+  from a family profile. Endpoint problems yield an empty set rather than someone else's agents.
+- **Cross-profile reads refused at the route.** A cross-profile memory read over HTTP returns
+  `403 cross_profile_forbidden`, asserted against the real route rather than the library.
+- **Sidebar and open conversation scoped.** The sidebar never renders another profile's agents, and
+  an open conversation pointing at an unowned agent is closed.
+
+### Interop
+
+- **Cross-agent bridges.** `POST /api/bridges`, `GET /api/bridges`, and per-bridge `accept`,
+  `revoke`, and `messages`, with a dual approval gate, pair scoping, persisted expiry, immediate
+  revocation, and full audit logging. Creating a bridge is read-only on ownership.
+- `POST /:id/messages` accepts an optional `senderAgentId`. A single-agent side resolves the sender
+  automatically; with multiple agents the caller must identify the speaker, otherwise pair scope
+  would be unenforceable.
+
+### Safety
+
+- **Core-update guard.** A single choke point blocking this UI layer from gateway-lifecycle
+  mutations and agent-delegation writes, so an agent prompt cannot escalate into mutating the
+  engine underneath.
+- **The gateway is no longer bounced mid core-update**, which is what produced an outage during a
+  failed upgrade.
+
+### Fixes
+
+- **The 30-second session poll no longer moves the open conversation.** It previously re-picked the
+  current session on every pass, so a lagging list silently switched chats mid-sentence, remounted
+  the composer, and lost the draft.
+- Per-conversation drafts survive navigation and reload.
+
+### Interface
+
+- Prompt cards for `secrets` / `ask_user` prompts, rendered above the composer.
+- Working-paws activity signal across the chat surface and roster.
+- Roster sidebar redesign: collapsible groups above bots, activity sorting, persisted collapse
+  state, explicit unassigned group.
+- Rebrand to Korg-e, including the openbot-style design port, dark theme, animated agent avatars
+  reflecting working state, and a login screen mascot.
+
+### Fork housekeeping
+
+- Renamed to `korg-e` at `0.50.0`; upstream tags preserved as `upstream-vX.Y.Z` so the built-in
+  updater resolves only Korg-e releases.
+- Operational identifiers (`nerve.service`, `~/nerve`, `~/.nerve`, `NERVE_INSTALL_DIR`) are
+  intentionally unchanged so existing installs and their updaters keep working.
+- MIT license retained with the original Nerve copyright notice, plus a derivative-work statement.
 
 ## [1.5.3] - 2026-04-21
 

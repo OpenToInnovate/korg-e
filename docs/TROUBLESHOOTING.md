@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common issues and solutions for Nerve.
+Common issues and solutions for Korg-e.
 
 ---
 
@@ -117,19 +117,19 @@ The server detects `EADDRINUSE` and exits with a clear error (see `server/index.
 **Causes:**
 1. Wrong gateway token
 2. Gateway not running
-3. Token mismatch between Nerve server config and gateway
+3. Token mismatch between Korg-e server config and gateway
 
 **Fix:**
 - Verify the gateway is running: `openclaw gateway status`
 - Check token: the server reads `GATEWAY_TOKEN` or `OPENCLAW_GATEWAY_TOKEN` env var
-- For trusted official-gateway access, `/api/connect-defaults` advertises `serverSideAuth=true` and Nerve connects with an empty browser-side token
+- For trusted official-gateway access, `/api/connect-defaults` advertises `serverSideAuth=true` and Korg-e connects with an empty browser-side token
 - For custom gateway URLs or untrusted access, enter the token manually in the connection dialog
 
 ### Connection drops and "SIGNAL LOST" banner
 
 **Symptom:** Red reconnecting banner appears periodically.
 
-**Cause:** WebSocket connection to gateway dropped. Nerve auto-reconnects with exponential backoff (1s base, 30s max).
+**Cause:** WebSocket connection to gateway dropped. Korg-e auto-reconnects with exponential backoff (1s base, 30s max).
 
 **Diagnosis:**
 ```bash
@@ -196,7 +196,7 @@ WS_ALLOWED_HOSTS=mygateway.local npm start
 
 **Symptom:** Chat connects, but remote workspace panels like Files, Memory, Config, or Skills fail with gateway `origin not allowed` errors.
 
-**Cause:** Those panels can use the server-side gateway RPC fallback, which opens its own WebSocket to the gateway. If Nerve does not know its real browser-facing origin, that fallback can present the wrong origin even though the browser chat path is already working.
+**Cause:** Those panels can use the server-side gateway RPC fallback, which opens its own WebSocket to the gateway. If Korg-e does not know its real browser-facing origin, that fallback can present the wrong origin even though the browser chat path is already working.
 
 **Fix:** Set the exact browser origin in `.env` and allow the same origin on the gateway:
 
@@ -204,7 +204,7 @@ WS_ALLOWED_HOSTS=mygateway.local npm start
 NERVE_PUBLIC_ORIGIN=https://nerve.example.com
 ```
 
-Also add `https://nerve.example.com` to `gateway.controlUi.allowedOrigins`, then restart both Nerve and the gateway.
+Also add `https://nerve.example.com` to `gateway.controlUi.allowedOrigins`, then restart both Korg-e and the gateway.
 
 ### "device token mismatch" on WebSocket connect
 
@@ -212,7 +212,7 @@ Also add `https://nerve.example.com` to `gateway.controlUi.allowedOrigins`, then
 
 **Causes:**
 1. **Stale browser config.** The browser may still have an old manually-entered token saved in `localStorage` (`oc-config`), often from an older build or a custom gateway connection.
-2. **Token mismatch across config files.** OpenClaw 2026.2.19 has a known bug where `openclaw onboard` writes different tokens to the systemd service file and `openclaw.json`. The gateway uses the systemd env var; Nerve reads from `.env`.
+2. **Token mismatch across config files.** OpenClaw 2026.2.19 has a known bug where `openclaw onboard` writes different tokens to the systemd service file and `openclaw.json`. The gateway uses the systemd env var; Korg-e reads from `.env`.
 
 **Fix (stale browser config):**
 Clear site data or remove `localStorage.oc-config`, then reload so the official managed gateway path can reconnect with an empty token.
@@ -263,7 +263,7 @@ After approval, reconnect from the browser (refresh the page or click reconnect)
 ["cron", "gateway", "sessions_spawn"]
 ```
 
-If Nerve and the gateway are on the same machine, re-running `npm run setup` can patch it for you.
+If Korg-e and the gateway are on the same machine, re-running `npm run setup` can patch it for you.
 
 ### Messages buffered indefinitely
 
@@ -303,7 +303,7 @@ If Nerve and the gateway are on the same machine, re-running `npm run setup` can
 
 **Cause:** TTS cache serving stale entries. The cache is an LRU with TTL expiry (configurable via `config.ttsCacheTtlMs`), 100 MB memory budget.
 
-**Fix:** Restart the Nerve server to clear the in-memory TTS cache.
+**Fix:** Restart the Korg-e server to clear the in-memory TTS cache.
 
 ### Edge TTS fails silently
 
@@ -454,7 +454,7 @@ MEMORY_PATH=/path/to/.openclaw/workspace/MEMORY.md
 
 **Symptom:** "Timed out waiting for subagent to spawn" error.
 
-**Cause:** Nerve requested a child session, but the gateway never surfaced a matching worker session before the timeout. Depending on the path, that usually means the selected root session could not launch the child, the normal `sessions_spawn` path failed, or the child session metadata never became visible to Nerve's poller.
+**Cause:** Korg-e requested a child session, but the gateway never surfaced a matching worker session before the timeout. Depending on the path, that usually means the selected root session could not launch the child, the normal `sessions_spawn` path failed, or the child session metadata never became visible to Korg-e's poller.
 
 **Fix:**
 - Make sure the selected root agent exists and is healthy
@@ -503,7 +503,7 @@ That means failures can come from a missing assignee root, a child-session creat
 
 **Fix:**
 - Verify the expected models are configured in OpenClaw (`agents.defaults.model` / `agents.defaults.models`)
-- Check that Nerve can read the active OpenClaw config file
+- Check that Korg-e can read the active OpenClaw config file
 - Check server logs for `gateway/models` read errors
 - After fixing config, reopen the spawn dialog or refresh the page
 
@@ -515,7 +515,7 @@ That means failures can come from a missing assignee root, a child-session creat
 - **Model changes** can fall back to `POST /api/gateway/session-patch`
 - **Thinking changes** must go through WebSocket RPC `sessions.patch`
 
-If you call the HTTP fallback with only `thinkingLevel`, it returns **501**. If Nerve cannot find an active root session and you omitted `sessionKey`, it can return **409**.
+If you call the HTTP fallback with only `thinkingLevel`, it returns **501**. If Korg-e cannot find an active root session and you omitted `sessionKey`, it can return **409**.
 
 **Fix:**
 - For model changes, verify the HTTP fallback returned `{ ok: true }`

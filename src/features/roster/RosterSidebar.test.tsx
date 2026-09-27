@@ -4,7 +4,7 @@ import { RosterSidebar } from './RosterSidebar';
 import { ProfileSwitcher } from '@/features/profiles/ProfileSwitcher';
 import type { ProfilesApi, Profile } from '@/features/profiles/useProfiles';
 import type { RosterApi } from './useRoster';
-import type { RosterBot, RosterData, RosterGroup, RosterSection } from './types';
+import type { RosterBot, RosterData } from './types';
 
 vi.mock('@/contexts/SessionContext', () => ({
   useSessionContext: () => ({ markSessionRead: vi.fn(), markSessionUnread: vi.fn() }),
