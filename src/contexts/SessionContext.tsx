@@ -554,7 +554,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (connectionState !== 'connected') return;
     try {
       const newSessions = await listAuthoritativeSessions();
-      const nextCurrentSession = pickDefaultSessionKey(newSessions, currentSessionRef.current);
+      // Never move the user off their current session on a background refresh.
+      // The poll can transiently omit a session (list lag, gateway restart), and
+      // re-picking silently yanked the view to another chat mid-typing, which
+      // remounted the composer and lost the draft. Explicit navigation and
+      // deleteSession still re-pick on their own.
+      const currentKey = currentSessionRef.current;
+      const nextCurrentSession = currentKey || pickDefaultSessionKey(newSessions, currentKey);
       
       // Smart diffing: preserve object references for unchanged sessions.
       // This prevents unnecessary re-renders in child components.

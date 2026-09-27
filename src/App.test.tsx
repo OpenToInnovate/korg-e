@@ -943,3 +943,78 @@ describe('App kanban visibility gating', () => {
     expect(screen.queryAllByRole('button', { name: /open command palette/i })).toHaveLength(0);
   });
 });
+
+describe('App profile scoping of the open conversation', () => {
+  beforeEach(() => {
+    sessionContext.currentSession = 'agent:alpha:main';
+    sessionContext.setCurrentSession = vi.fn();
+
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  });
+
+  /** Serve an ownership set, and a minimal roster alongside it. */
+  function mockOwnership(...ids: string[]) {
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/profiles/agent-ownership')) {
+        const body = JSON.stringify({ ownedAgentIds: ids });
+        return { ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) } as Response;
+      }
+      if (url.includes('/api/roster')) {
+        const body = JSON.stringify({ version: 2, bots: [], groups: [], sections: [] });
+        return { ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) } as Response;
+      }
+      if (url.includes('/api/kanban/proposals')) {
+        return { ok: true, status: 200, text: async () => '{}', json: async () => ({ proposals: [] }) } as Response;
+      }
+      return { ok: true, json: async () => ({}) } as Response;
+    }) as typeof fetch;
+  }
+
+  it('closes a conversation owned by another profile instead of rendering its transcript', async () => {
+    mockOwnership('alpha');
+    sessionContext.currentSession = 'agent:bravo:main';
+
+    render(<App />);
+
+    // ChatPanel renders whatever currentSession points at, so an unowned key
+    // would put another profile's chat on screen.
+    await waitFor(() => {
+      expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('');
+    });
+  });
+
+  it('keeps a conversation the active profile owns', async () => {
+    mockOwnership('alpha', 'bravo');
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(sessionContext.setCurrentSession).not.toHaveBeenCalledWith('');
+    });
+  });
+
+  it('does not close the conversation when ownership has not loaded yet', async () => {
+    // Ownership endpoint unreachable: ownedAgentIds fails closed to []. Blanking
+    // the conversation here would be a usability bug, not a privacy win.
+    global.fetch = vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) }) as Response) as typeof fetch;
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(sessionContext.setCurrentSession).not.toHaveBeenCalledWith('');
+    });
+  });
+});

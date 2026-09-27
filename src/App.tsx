@@ -53,7 +53,7 @@ import { MessageSquare, LayoutGrid, PanelRightClose } from 'lucide-react';
 import { useProposals } from '@/features/kanban/hooks/useProposals';
 import { type BeadLinkTarget, type OpenBeadTab, buildBeadTabId } from '@/features/beads';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
-import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { buildAgentRootSessionKey, getSessionDisplayLabel, getRootAgentId } from '@/features/sessions/sessionKeys';
 import { shouldGuardWorkspaceSwitch } from '@/features/workspace/workspaceSwitchGuard';
 import { getWorkspaceAgentId, getWorkspaceRootSessionKey } from '@/features/workspace/workspaceScope';
 
@@ -307,6 +307,40 @@ export default function App({ onLogout }: AppProps) {
   const roster = useRoster();
   // Pending approvals badge for the phone tab bar.
   const { pendingCount: pendingApprovalCount } = useProposals();
+
+  // Profile scoping for the session surfaces that are NOT already covered by
+  // RosterSidebar's own ownedAgentIds filter.
+  //
+  // sessions.list is a gateway WebSocket RPC, so it returns every session on
+  // the host regardless of profile; profiles are only enforced server-side on
+  // /api/roster. RosterSidebar filters its own rows, but ActivityFeed and the
+  // open conversation did not — which is how another profile's chats flashed
+  // on screen.
+  //
+  // ownedAgentIds fails closed (empty on any error) and an empty set means
+  // "show nothing"; showing another profile's chats is far worse than showing
+  // none, so consumers must treat empty as "not loaded yet", not "no filter".
+  const ownedAgentIdSet = useMemo(() => new Set(roster.ownedAgentIds), [roster.ownedAgentIds]);
+  const isSessionOwned = useCallback((sessionKey: string) => {
+    if (ownedAgentIdSet.size === 0) return false;
+    const agentId = getRootAgentId(sessionKey);
+    return agentId !== null && ownedAgentIdSet.has(agentId);
+  }, [ownedAgentIdSet]);
+
+  const visibleSessions = useMemo(
+    () => (ownedAgentIdSet.size === 0 ? [] : sessions.filter((s) => isSessionOwned(getSessionKey(s)))),
+    [sessions, ownedAgentIdSet, isSessionOwned],
+  );
+
+  // Never keep an open conversation that the active profile does not own —
+  // ChatPanel renders whatever currentSession points at, so an unowned key
+  // would put another profile's transcript on screen.
+  useEffect(() => {
+    if (!currentSession) return;
+    if (ownedAgentIdSet.size === 0) return; // ownership not loaded yet
+    if (isSessionOwned(currentSession)) return;
+    setCurrentSession('');
+  }, [currentSession, ownedAgentIdSet, isSessionOwned, setCurrentSession]);
 
   // Bot profile linked to the open conversation (drives its corgi + collar).
   const currentBot = useMemo(
@@ -1217,7 +1251,7 @@ export default function App({ onLogout }: AppProps) {
         {isCompactLayout && mobileView === 'activity' && (
           <section className="shell-panel boot-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[28px]">
             <ActivityFeed
-              sessions={sessions}
+              sessions={visibleSessions}
               unreadSessions={unreadSessions}
               onSelectSession={(key) => {
                 void handleSessionChange(key);
