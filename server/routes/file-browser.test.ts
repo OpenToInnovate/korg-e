@@ -94,7 +94,7 @@ describe('file-browser routes', () => {
       await fs.mkdir(path.join(tmpDir, 'subdir'));
 
       const app = await buildApp();
-      const res = await app.request('/api/files/tree');
+      const res = await app.request('/api/files/tree?agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; entries: Array<{ name: string; type: string }> };
       expect(json.ok).toBe(true);
@@ -108,13 +108,13 @@ describe('file-browser routes', () => {
     it('returns 400 for non-existent subdirectory', async () => {
       // resolveWorkspacePath returns null for non-existent paths, so route returns 400
       const app = await buildApp();
-      const res = await app.request('/api/files/tree?path=nonexistent');
+      const res = await app.request('/api/files/tree?path=nonexistent&agentId=main');
       expect(res.status).toBe(400);
     });
 
     it('rejects path traversal attempts', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/tree?path=../../etc');
+      const res = await app.request('/api/files/tree?path=../../etc&agentId=main');
       expect(res.status).toBe(400);
     });
 
@@ -124,7 +124,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'visible.md'), 'hi');
 
       const app = await buildApp();
-      const res = await app.request('/api/files/tree');
+      const res = await app.request('/api/files/tree?agentId=main');
       const json = (await res.json()) as { ok: boolean; entries: Array<{ name: string }> };
       const names = json.entries.map(e => e.name);
       expect(names).not.toContain('node_modules');
@@ -136,7 +136,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'visible.md'), 'hello');
 
       const app = await buildApp();
-      const res = await app.request('/api/files/tree');
+      const res = await app.request('/api/files/tree?agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; entries: Array<{ name: string }> };
       const names = json.entries.map(e => e.name);
@@ -150,7 +150,7 @@ describe('file-browser routes', () => {
       await fs.mkdir(path.join(tmpDir, '.plans'));
 
       const app = await buildApp();
-      const res = await app.request('/api/files/tree?showHidden=true');
+      const res = await app.request('/api/files/tree?showHidden=true&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; entries: Array<{ name: string }> };
       const names = json.entries.map(e => e.name);
@@ -169,7 +169,7 @@ describe('file-browser routes', () => {
         ],
       });
 
-      const res = await app.request('/api/files/tree?showHidden=true');
+      const res = await app.request('/api/files/tree?showHidden=true&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; entries: Array<{ name: string }>; remoteWorkspace?: boolean };
       const names = json.entries.map((e) => e.name);
@@ -187,7 +187,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'docs-note.md'), '# hi');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/resolve?path=docs-note.md');
+      const res = await app.request('/api/files/resolve?path=docs-note.md&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'docs-note.md', type: 'file', binary: false });
@@ -197,7 +197,7 @@ describe('file-browser routes', () => {
       await fs.mkdir(path.join(tmpDir, 'docs'), { recursive: true });
       const app = await buildApp();
 
-      const res = await app.request('/api/files/resolve?path=docs');
+      const res = await app.request('/api/files/resolve?path=docs&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'docs', type: 'directory', binary: false });
@@ -208,7 +208,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'docs', 'guide', 'advanced.md'), '# Advanced');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/resolve?path=advanced.md&relativeTo=docs/guide/index.md');
+      const res = await app.request('/api/files/resolve?path=advanced.md&relativeTo=docs/guide/index.md&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'docs/guide/advanced.md', type: 'file', binary: false });
@@ -219,7 +219,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'docs', 'todo.md'), '# Todo');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/resolve?path=/docs/todo.md&relativeTo=notes/index.md');
+      const res = await app.request('/api/files/resolve?path=/docs/todo.md&relativeTo=notes/index.md&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'docs/todo.md', type: 'file', binary: false });
@@ -230,7 +230,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'projects', 'demo', 'notes.md'), '# Notes');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/resolve?path=./projects/demo/notes.md&relativeTo=/README.md');
+      const res = await app.request('/api/files/resolve?path=./projects/demo/notes.md&relativeTo=/README.md&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'projects/demo/notes.md', type: 'file', binary: false });
@@ -238,7 +238,7 @@ describe('file-browser routes', () => {
 
     it('returns 404 for safe missing targets inside the workspace root', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/resolve?path=missing-note.md');
+      const res = await app.request('/api/files/resolve?path=missing-note.md&agentId=main');
       expect(res.status).toBe(404);
     });
 
@@ -247,7 +247,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'src', 'main.ts'), 'export {};');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/resolve?path=%2Fworkspace%2Fsrc%2Fmain.ts');
+      const res = await app.request('/api/files/resolve?path=%2Fworkspace%2Fsrc%2Fmain.ts&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
@@ -259,7 +259,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'src', 'main.ts'), 'export {};');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/resolve?path=%2Fworkspace%2Fsrc%2Fmain.ts&relativeTo=notes/index.md');
+      const res = await app.request('/api/files/resolve?path=%2Fworkspace%2Fsrc%2Fmain.ts&relativeTo=notes/index.md&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
@@ -271,7 +271,7 @@ describe('file-browser routes', () => {
       const app = await buildApp();
       const absoluteTarget = path.join(tmpDir, 'src', 'main.ts').split(path.sep).join('/');
 
-      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteTarget)}`);
+      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteTarget)}&agentId=main`);
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
@@ -283,7 +283,7 @@ describe('file-browser routes', () => {
       const app = await buildApp();
       const realTarget = (await fs.realpath(path.join(tmpDir, 'src', 'main.ts'))).split(path.sep).join('/');
 
-      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(realTarget)}`);
+      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(realTarget)}&agentId=main`);
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
@@ -296,7 +296,7 @@ describe('file-browser routes', () => {
       const app = await buildApp();
       const absoluteTarget = path.join(tmpDir, 'src', 'main.ts').split(path.sep).join('/');
 
-      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteTarget)}&relativeTo=notes/index.md`);
+      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteTarget)}&relativeTo=notes/index.md&agentId=main`);
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; path: string; type: string; binary: boolean };
       expect(json).toEqual({ ok: true, path: 'src/main.ts', type: 'file', binary: false });
@@ -306,19 +306,19 @@ describe('file-browser routes', () => {
       const app = await buildApp();
       const absoluteRoot = tmpDir.split(path.sep).join('/');
 
-      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteRoot)}`);
+      const res = await app.request(`/api/files/resolve?path=${encodeURIComponent(absoluteRoot)}&agentId=main`);
       expect(res.status).toBe(404);
     });
 
     it('returns 403 for invalid or excluded targets', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/resolve?path=../../etc');
+      const res = await app.request('/api/files/resolve?path=../../etc&agentId=main');
       expect(res.status).toBe(403);
     });
 
     it('returns 403 when a current-document-relative link escapes the workspace', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/resolve?path=../../../etc/passwd&relativeTo=docs/guide/index.md');
+      const res = await app.request('/api/files/resolve?path=../../../etc/passwd&relativeTo=docs/guide/index.md&agentId=main');
       expect(res.status).toBe(403);
     });
   });
@@ -326,14 +326,14 @@ describe('file-browser routes', () => {
   describe('GET /api/files/read', () => {
     it('returns 400 when path is missing', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/read');
+      const res = await app.request('/api/files/read?agentId=main');
       expect(res.status).toBe(400);
     });
 
     it('reads a text file', async () => {
       await fs.writeFile(path.join(tmpDir, 'readme.md'), '# Hello World');
       const app = await buildApp();
-      const res = await app.request('/api/files/read?path=readme.md');
+      const res = await app.request('/api/files/read?path=readme.md&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; content: string };
       expect(json.ok).toBe(true);
@@ -344,20 +344,20 @@ describe('file-browser routes', () => {
       // resolveWorkspacePath returns null for non-existent files (unless allowNonExistent)
       // so the route returns 403 "Invalid or excluded path", not 404
       const app = await buildApp();
-      const res = await app.request('/api/files/read?path=nope.md');
+      const res = await app.request('/api/files/read?path=nope.md&agentId=main');
       expect(res.status).toBe(403);
     });
 
     it('returns 415 for binary files', async () => {
       await fs.writeFile(path.join(tmpDir, 'image.png'), Buffer.from([0x89, 0x50]));
       const app = await buildApp();
-      const res = await app.request('/api/files/read?path=image.png');
+      const res = await app.request('/api/files/read?path=image.png&agentId=main');
       expect(res.status).toBe(415);
     });
 
     it('rejects path traversal', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/read?path=../../../etc/passwd');
+      const res = await app.request('/api/files/read?path=../../../etc/passwd&agentId=main');
       expect(res.status).toBe(403);
     });
   });
@@ -365,7 +365,7 @@ describe('file-browser routes', () => {
   describe('PUT /api/files/write', () => {
     it('writes a new file', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/write', {
+      const res = await app.request('/api/files/write?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'new-file.md', content: '# New File' }),
@@ -382,7 +382,7 @@ describe('file-browser routes', () => {
 
     it('returns 400 when path is missing', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/write', {
+      const res = await app.request('/api/files/write?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: 'hello' }),
@@ -392,7 +392,7 @@ describe('file-browser routes', () => {
 
     it('returns 400 when content is missing', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/write', {
+      const res = await app.request('/api/files/write?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'test.md' }),
@@ -402,7 +402,7 @@ describe('file-browser routes', () => {
 
     it('rejects path traversal on write', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/write', {
+      const res = await app.request('/api/files/write?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: '../../etc/passwd', content: 'hacked' }),
@@ -412,7 +412,7 @@ describe('file-browser routes', () => {
 
     it('rejects binary file writes', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/write', {
+      const res = await app.request('/api/files/write?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'image.png', content: 'not really an image' }),
@@ -426,7 +426,7 @@ describe('file-browser routes', () => {
 
       const app = await buildApp();
       // Write with a stale mtime
-      const res = await app.request('/api/files/write', {
+      const res = await app.request('/api/files/write?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'conflict.md', content: 'updated', expectedMtime: 1 }),
@@ -440,7 +440,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'old.md'), 'hello');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/rename', {
+      const res = await app.request('/api/files/rename?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'old.md', newName: 'new.md' }),
@@ -460,7 +460,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'b.md'), 'b');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/rename', {
+      const res = await app.request('/api/files/rename?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'a.md', newName: 'b.md' }),
@@ -473,7 +473,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'note.md'), 'x');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/rename', {
+      const res = await app.request('/api/files/rename?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'note.md', newName: '.trash' }),
@@ -486,7 +486,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'note.md'), 'x');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/rename', {
+      const res = await app.request('/api/files/rename?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'note.md', newName: 'bad\u0000name.md' }),
@@ -502,7 +502,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'note.md'), 'hello');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/move', {
+      const res = await app.request('/api/files/move?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourcePath: 'note.md', targetDirPath: 'docs' }),
@@ -521,7 +521,7 @@ describe('file-browser routes', () => {
       await fs.mkdir(path.join(tmpDir, 'a', 'b'), { recursive: true });
       const app = await buildApp();
 
-      const res = await app.request('/api/files/move', {
+      const res = await app.request('/api/files/move?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourcePath: 'a', targetDirPath: 'a/b' }),
@@ -535,7 +535,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'note.md'), 'x');
       const app = await buildApp();
 
-      const res = await app.request('/api/files/move', {
+      const res = await app.request('/api/files/move?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourcePath: 'note.md', targetDirPath: '.trash' }),
@@ -553,7 +553,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'docs', 'spec.md'), 'spec');
       const app = await buildApp();
 
-      const trashRes = await app.request('/api/files/trash', {
+      const trashRes = await app.request('/api/files/trash?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'docs/spec.md' }),
@@ -566,13 +566,13 @@ describe('file-browser routes', () => {
       expect(trashJson.to.startsWith('.trash/')).toBe(true);
 
       // .trash should be visible, but internal index should remain hidden
-      const treeRes = await app.request('/api/files/tree?path=.trash&depth=1');
+      const treeRes = await app.request('/api/files/tree?path=.trash&depth=1&agentId=main');
       expect(treeRes.status).toBe(200);
       const treeJson = (await treeRes.json()) as { ok: boolean; entries: Array<{ name: string }> };
       const names = treeJson.entries.map((e) => e.name);
       expect(names).not.toContain('.index.json');
 
-      const restoreRes = await app.request('/api/files/restore', {
+      const restoreRes = await app.request('/api/files/restore?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: trashJson.to }),
@@ -591,7 +591,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'docs', 'spec.md'), 'original');
       const app = await buildApp();
 
-      const trashRes = await app.request('/api/files/trash', {
+      const trashRes = await app.request('/api/files/trash?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'docs/spec.md' }),
@@ -601,7 +601,7 @@ describe('file-browser routes', () => {
       // Re-create original path to force conflict
       await fs.writeFile(path.join(tmpDir, 'docs', 'spec.md'), 'replacement');
 
-      const restoreRes = await app.request('/api/files/restore', {
+      const restoreRes = await app.request('/api/files/restore?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: trashJson.to }),
@@ -614,7 +614,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'test.txt'), 'test content');
 
       const app = await buildApp();
-      const res = await app.request('/api/files/trash', {
+      const res = await app.request('/api/files/trash?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'test.txt' }),
@@ -685,7 +685,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'notes.md'), 'main notes');
 
       const app = await buildApp();
-      const res = await app.request('/api/files/write', {
+      const res = await app.request('/api/files/write?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: 'research', path: 'notes.md', content: 'research notes' }),
@@ -698,7 +698,7 @@ describe('file-browser routes', () => {
 
     it('bootstraps the first write into a fresh agent workspace', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/write', {
+      const res = await app.request('/api/files/write?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: 'research', path: 'notes.md', content: 'research notes' }),
@@ -718,7 +718,7 @@ describe('file-browser routes', () => {
 
       const app = await buildApp();
 
-      const renameRes = await app.request('/api/files/rename', {
+      const renameRes = await app.request('/api/files/rename?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: 'research', path: 'draft.md', newName: 'renamed.md' }),
@@ -727,7 +727,7 @@ describe('file-browser routes', () => {
       await expect(fs.readFile(path.join(researchWorkspace, 'renamed.md'), 'utf-8')).resolves.toBe('research draft');
       await expect(fs.readFile(path.join(tmpDir, 'draft.md'), 'utf-8')).resolves.toBe('main draft');
 
-      const moveRes = await app.request('/api/files/move', {
+      const moveRes = await app.request('/api/files/move?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: 'research', sourcePath: 'renamed.md', targetDirPath: 'archive' }),
@@ -736,7 +736,7 @@ describe('file-browser routes', () => {
       await expect(fs.readFile(path.join(researchWorkspace, 'archive', 'renamed.md'), 'utf-8')).resolves.toBe('research draft');
       await expect(fs.access(path.join(tmpDir, 'archive', 'renamed.md'))).rejects.toThrow();
 
-      const trashRes = await app.request('/api/files/trash', {
+      const trashRes = await app.request('/api/files/trash?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: 'research', path: 'archive/renamed.md' }),
@@ -747,7 +747,7 @@ describe('file-browser routes', () => {
       expect(trashJson.to.startsWith('.trash/')).toBe(true);
       await expect(fs.readFile(path.join(tmpDir, 'draft.md'), 'utf-8')).resolves.toBe('main draft');
 
-      const restoreRes = await app.request('/api/files/restore', {
+      const restoreRes = await app.request('/api/files/restore?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: 'research', path: trashJson.to }),
@@ -763,7 +763,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(tmpDir, 'test.md'), '# Test');
 
       const app = await buildApp();
-      const res = await app.request('/api/files/tree');
+      const res = await app.request('/api/files/tree?agentId=main');
       expect(res.status).toBe(200);
 
       const json = (await res.json()) as {
@@ -784,7 +784,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(customRoot, 'test.md'), '# Test');
 
       const app = await buildApp({ fileBrowserRoot: customRoot });
-      const res = await app.request('/api/files/tree');
+      const res = await app.request('/api/files/tree?agentId=main');
       expect(res.status).toBe(200);
       
       const json = (await res.json()) as { 
@@ -809,7 +809,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(customRoot, 'test.txt'), 'test content');
 
       const app = await buildApp({ fileBrowserRoot: customRoot });
-      const res = await app.request('/api/files/trash', {
+      const res = await app.request('/api/files/trash?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'test.txt' }),
@@ -835,7 +835,7 @@ describe('file-browser routes', () => {
       await fs.writeFile(path.join(testDir, 'file.txt'), 'content');
 
       const app = await buildApp({ fileBrowserRoot: customRoot });
-      const res = await app.request('/api/files/trash', {
+      const res = await app.request('/api/files/trash?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'test-dir' }),
@@ -858,7 +858,7 @@ describe('file-browser routes', () => {
       await fs.mkdir(customRoot);
 
       const app = await buildApp({ fileBrowserRoot: customRoot });
-      const res = await app.request('/api/files/trash', {
+      const res = await app.request('/api/files/trash?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: '.' }),
@@ -875,7 +875,7 @@ describe('file-browser routes', () => {
       await fs.mkdir(customRoot);
 
       const app = await buildApp({ fileBrowserRoot: customRoot });
-      const res = await app.request('/api/files/trash', {
+      const res = await app.request('/api/files/trash?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: './' }),
@@ -891,21 +891,21 @@ describe('file-browser routes', () => {
   describe('GET /api/files/raw', () => {
     it('returns 400 when path is missing', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/files/raw');
+      const res = await app.request('/api/files/raw?agentId=main');
       expect(res.status).toBe(400);
     });
 
     it('returns 415 for unsupported file types', async () => {
       await fs.writeFile(path.join(tmpDir, 'file.txt'), 'hello');
       const app = await buildApp();
-      const res = await app.request('/api/files/raw?path=file.txt');
+      const res = await app.request('/api/files/raw?path=file.txt&agentId=main');
       expect(res.status).toBe(415);
     });
 
     it('serves image files with correct MIME type', async () => {
       await fs.writeFile(path.join(tmpDir, 'photo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
       const app = await buildApp();
-      const res = await app.request('/api/files/raw?path=photo.png');
+      const res = await app.request('/api/files/raw?path=photo.png&agentId=main');
       expect(res.status).toBe(200);
       expect(res.headers.get('Content-Type')).toBe('image/png');
     });

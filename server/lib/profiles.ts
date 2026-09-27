@@ -574,8 +574,29 @@ export function ownedAgentIdsForProfile(profileId: string): string[] {
  * nobody owns is only reachable from the default profile, never from a family
  * member's.
  */
+/**
+ * A request did not name an agent at all.
+ *
+ * Distinct from {@link CrossProfileForbiddenError}: "which agent?" is a
+ * malformed request (400), not a permission denial (403). It exists so callers
+ * cannot silently treat a missing id as "no restriction".
+ */
+export class MissingAgentIdError extends Error {
+  constructor() {
+    super('agentId is required');
+    this.name = 'MissingAgentIdError';
+  }
+}
+
 export function assertAgentInProfile(agentId: string | null | undefined, activeProfileId: string): void {
-  if (!agentId) return;
+  // FAIL CLOSED. "No agent named" used to mean "no restriction", and because
+  // resolveAgentWorkspace() maps a missing id to `main`, that let an
+  // underspecified request resolve to the shared root workspace — visible to
+  // every default-profile agent. A request that does not say whose data it
+  // wants has no access to any agent's data.
+  if (typeof agentId !== 'string' || !agentId.trim()) {
+    throw new MissingAgentIdError();
+  }
   const owner = agentProfileId(agentId);
   if (owner === null) {
     // Unowned agent. The default profile keeps today's permissive behaviour so
@@ -596,7 +617,12 @@ export function assertRowInProfile(
   activeProfileId: string,
   label: string,
 ): void {
-  if (!row) return;
+  // FAIL CLOSED, same reasoning as assertAgentInProfile: a row that could not be
+  // loaded cannot be proven to belong to the active profile. No current caller
+  // passes a missing row; this makes that explicit rather than accidental.
+  if (!row) {
+    throw new CrossProfileForbiddenError(`${label} not found`);
+  }
   const owner = row.profileId || DEFAULT_PROFILE_ID;
   if (owner !== activeProfileId) {
     throw new CrossProfileForbiddenError(`${label} belongs to profile ${owner}`);

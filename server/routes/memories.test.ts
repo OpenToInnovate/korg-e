@@ -115,7 +115,7 @@ describe('memories routes', () => {
   describe('GET /api/memories', () => {
     it('returns empty array when no memories exist', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/memories');
+      const res = await app.request('/api/memories?agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as Array<unknown>;
       expect(Array.isArray(json)).toBe(true);
@@ -134,7 +134,7 @@ describe('memories routes', () => {
 `);
 
       const app = await buildApp();
-      const res = await app.request('/api/memories');
+      const res = await app.request('/api/memories?agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as Array<{ type: string; text: string }>;
 
@@ -153,7 +153,7 @@ describe('memories routes', () => {
 `);
 
       const app = await buildApp();
-      const res = await app.request('/api/memories');
+      const res = await app.request('/api/memories?agentId=main');
       const json = (await res.json()) as Array<{ type: string; text: string; date?: string }>;
 
       const daily = json.filter(m => m.type === 'daily');
@@ -190,7 +190,7 @@ describe('memories routes', () => {
       await fs.writeFile(path.join(researchWorkspace, 'MEMORY.md'), '# MEMORY.md\n');
 
       const app = await buildApp();
-      const res = await app.request('/api/memories', {
+      const res = await app.request('/api/memories?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: 'research', text: 'Research fact', section: 'Facts' }),
@@ -209,7 +209,7 @@ describe('memories routes', () => {
   describe('POST /api/memories', () => {
     it('returns 400 when text is empty', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/memories', {
+      const res = await app.request('/api/memories?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: '' }),
@@ -220,7 +220,7 @@ describe('memories routes', () => {
     it('creates a new memory in MEMORY.md', async () => {
       await fs.writeFile(memoryPath, '# MEMORY.md\n');
       const app = await buildApp();
-      const res = await app.request('/api/memories', {
+      const res = await app.request('/api/memories?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'Remember this fact', section: 'Facts' }),
@@ -239,7 +239,7 @@ describe('memories routes', () => {
     it('uses "General" as default section', async () => {
       await fs.writeFile(memoryPath, '# MEMORY.md\n');
       const app = await buildApp();
-      await app.request('/api/memories', {
+      await app.request('/api/memories?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'No section specified' }),
@@ -255,7 +255,7 @@ describe('memories routes', () => {
 - Existing fact
 `);
       const app = await buildApp();
-      await app.request('/api/memories', {
+      await app.request('/api/memories?agentId=main', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'Another fact', section: 'Facts' }),
@@ -269,7 +269,7 @@ describe('memories routes', () => {
   describe('DELETE /api/memories', () => {
     it('returns 400 when query is empty', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/memories', {
+      const res = await app.request('/api/memories?agentId=main', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: '' }),
@@ -285,7 +285,7 @@ describe('memories routes', () => {
 - Light mode
 `);
       const app = await buildApp();
-      const res = await app.request('/api/memories', {
+      const res = await app.request('/api/memories?agentId=main', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: 'Dark mode', type: 'item' }),
@@ -310,7 +310,7 @@ describe('memories routes', () => {
 - Item 2
 `);
       const app = await buildApp();
-      const res = await app.request('/api/memories', {
+      const res = await app.request('/api/memories?agentId=main', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: 'Section A', type: 'section' }),
@@ -324,7 +324,7 @@ describe('memories routes', () => {
     it('returns 404 when memory not found', async () => {
       await fs.writeFile(memoryPath, '# MEMORY.md\n');
       const app = await buildApp();
-      const res = await app.request('/api/memories', {
+      const res = await app.request('/api/memories?agentId=main', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: 'nonexistent item' }),
@@ -342,7 +342,7 @@ describe('memories routes', () => {
 - Item 2
 `);
       const app = await buildApp();
-      const res = await app.request('/api/memories/section?title=My%20Section');
+      const res = await app.request('/api/memories/section?title=My%20Section&agentId=main');
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; content: string };
       expect(json.ok).toBe(true);
@@ -351,20 +351,20 @@ describe('memories routes', () => {
 
     it('returns 400 when title is missing', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/memories/section');
+      const res = await app.request('/api/memories/section?agentId=main');
       expect(res.status).toBe(400);
     });
 
     it('returns 404 when section not found', async () => {
       await fs.writeFile(memoryPath, '# MEMORY.md\n');
       const app = await buildApp();
-      const res = await app.request('/api/memories/section?title=Nonexistent');
+      const res = await app.request('/api/memories/section?title=Nonexistent&agentId=main');
       expect(res.status).toBe(404);
     });
 
     it('validates date format to prevent traversal', async () => {
       const app = await buildApp();
-      const res = await app.request('/api/memories/section?title=Test&date=../../etc');
+      const res = await app.request('/api/memories/section?title=Test&date=../../etc&agentId=main');
       expect(res.status).toBe(400);
     });
   });
@@ -377,7 +377,7 @@ describe('memories routes', () => {
 - Old content
 `);
       const app = await buildApp();
-      const res = await app.request('/api/memories/section', {
+      const res = await app.request('/api/memories/section?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: 'Editable', content: '- New content' }),
@@ -394,7 +394,7 @@ describe('memories routes', () => {
     it('returns 404 when section not found', async () => {
       await fs.writeFile(memoryPath, '# MEMORY.md\n');
       const app = await buildApp();
-      const res = await app.request('/api/memories/section', {
+      const res = await app.request('/api/memories/section?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: 'Missing', content: 'stuff' }),

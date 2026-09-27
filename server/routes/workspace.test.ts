@@ -93,7 +93,7 @@ describe('workspace routes', () => {
     await fs.writeFile(path.join(mainWorkspace, 'SOUL.md'), 'main soul');
 
     const app = await buildApp();
-    const res = await app.request('/api/workspace/soul', {
+    const res = await app.request('/api/workspace/soul?agentId=main', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agentId: 'research', content: 'research soul' }),
@@ -108,7 +108,7 @@ describe('workspace routes', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const app = await buildApp();
 
-    const res = await app.request('/api/workspace/chatPathLinks');
+    const res = await app.request('/api/workspace/chatPathLinks?agentId=main');
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; content: string };
@@ -217,7 +217,7 @@ describe('workspace routes', () => {
       });
 
       const app = await buildRemoteApp();
-      const res = await app.request('/api/workspace/soul');
+      const res = await app.request('/api/workspace/soul?agentId=main');
 
       expect(res.status).toBe(200);
       const json = (await res.json()) as { ok: boolean; content: string; remoteWorkspace?: boolean };
@@ -230,7 +230,7 @@ describe('workspace routes', () => {
       gatewayFilesGetMock.mockResolvedValue(null);
 
       const app = await buildRemoteApp();
-      const res = await app.request('/api/workspace/soul');
+      const res = await app.request('/api/workspace/soul?agentId=main');
 
       expect(res.status).toBe(404);
     });
@@ -268,7 +268,7 @@ describe('workspace routes', () => {
       const app = new Hono();
       app.route('/', mod.default);
 
-      const res = await app.request('/api/workspace/soul', {
+      const res = await app.request('/api/workspace/soul?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: '# Remote Soul' }),
@@ -314,7 +314,7 @@ describe('workspace routes', () => {
       const app = new Hono();
       app.route('/', mod.default);
 
-      const res = await app.request('/api/workspace/soul', {
+      const res = await app.request('/api/workspace/soul?agentId=main', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: '# Fail Soul' }),
@@ -329,7 +329,7 @@ describe('workspace routes', () => {
       gatewayFilesGetMock.mockResolvedValue(null);
 
       const app = await buildRemoteApp();
-      const res = await app.request('/api/workspace/tools');
+      const res = await app.request('/api/workspace/tools?agentId=main');
 
       expect(res.status).toBe(404);
       const json = (await res.json()) as { ok: boolean; error: string };
@@ -343,7 +343,7 @@ describe('workspace routes', () => {
       ]);
 
       const app = await buildRemoteApp();
-      const res = await app.request('/api/workspace');
+      const res = await app.request('/api/workspace?agentId=main');
 
       expect(res.status).toBe(200);
       const json = (await res.json()) as {

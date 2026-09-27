@@ -12,6 +12,12 @@ import { dirname, join } from 'node:path';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { resolveOpenclawBin } from '../lib/openclaw-bin.js';
 import { InvalidAgentIdError, resolveAgentWorkspace } from '../lib/agent-workspace.js';
+import {
+  CrossProfileForbiddenError,
+  MissingAgentIdError,
+  activeProfileIdForRequest,
+  assertAgentInProfile,
+} from '../lib/profiles.js';
 import { config } from '../lib/config.js';
 
 const app = new Hono();
@@ -219,9 +225,30 @@ async function execOpenclawSkills(agentId?: string): Promise<RawSkill[]> {
 
 app.get('/api/skills', rateLimitGeneral, async (c) => {
   try {
-    const skills = await execOpenclawSkills(c.req.query('agentId'));
+    // Privacy guard. This route had NO profile check, and the resolved
+    // workspaceRoot becomes both the cwd and the scoped env for
+    // `openclaw skills list` — so without it a client could read another
+    // profile's agent workspace.
+    //
+    // A missing agentId is REJECTED, not defaulted. `main` is not a neutral
+    // default: in production `main` is bound to a family profile, and it owns
+    // the shared root workspace. Falling back to it would let an underspecified
+    // request land in another profile's data — which is the very bug being
+    // fixed. The caller must name the agent.
+    const activeProfileId = activeProfileIdForRequest(c);
+    const requested = c.req.query('agentId')?.trim();
+    const effectiveAgentId = requested || '';
+    assertAgentInProfile(effectiveAgentId, activeProfileId);
+
+    const skills = await execOpenclawSkills(effectiveAgentId);
     return c.json({ ok: true, skills });
   } catch (err) {
+    if (err instanceof CrossProfileForbiddenError) {
+      return c.json({ error: 'cross_profile_forbidden' }, 403);
+    }
+    if (err instanceof MissingAgentIdError) {
+      return c.json({ ok: false, error: 'agentId is required' }, 400);
+    }
     if (err instanceof InvalidAgentIdError) {
       return c.json({ ok: false, error: err.message }, 400);
     }

@@ -40,6 +40,7 @@ import { isWorkspaceLocal } from '../lib/workspace-detect.js';
 import { gatewayFilesList, gatewayFilesGet, gatewayFilesSet } from '../lib/gateway-rpc.js';
 import {
   CrossProfileForbiddenError,
+  MissingAgentIdError,
   assertAgentInProfile,
   activeProfileIdForRequest,
 } from '../lib/profiles.js';
@@ -92,6 +93,9 @@ async function resolveScopedWorkspace(c: Context, agentId?: string): Promise<Sco
 function handleAgentWorkspaceError(c: Context, err: unknown) {
   if (err instanceof CrossProfileForbiddenError) {
     return c.json({ error: 'cross_profile_forbidden' }, 403);
+  }
+  if (err instanceof MissingAgentIdError) {
+    return c.json({ ok: false, error: 'agentId is required' }, 400);
   }
   if (err instanceof InvalidAgentIdError) {
     return c.json({ ok: false, error: err.message }, 400);

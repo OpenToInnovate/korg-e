@@ -3,6 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import fs from 'node:fs/promises';
 import os from 'node:os';
+
+// Isolate the profile data: this suite would otherwise read the developer's
+// real ~/.nerve, where `main` is bound to a family profile.
+let isolatedDataDir: string;
+let previousDataDir: string | undefined;
+beforeEach(async () => {
+  previousDataDir = process.env.NERVE_DATA_DIR;
+  isolatedDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skills-datadir-'));
+  process.env.NERVE_DATA_DIR = isolatedDataDir;
+  await fs.writeFile(
+    path.join(isolatedDataDir, 'profiles.json'),
+    JSON.stringify({
+      version: 1,
+      profiles: [{ id: 'korge', name: 'Korg-e', color: '#C46443', emoji: null, order: 0, createdAt: 1 }],
+      agentLocks: {},
+    }),
+  );
+});
+afterEach(async () => {
+  if (previousDataDir === undefined) delete process.env.NERVE_DATA_DIR;
+  else process.env.NERVE_DATA_DIR = previousDataDir;
+  await fs.rm(isolatedDataDir, { recursive: true, force: true });
+});
 import path from 'node:path';
 
 interface ExecError extends Error {
@@ -124,7 +147,7 @@ describe('GET /api/skills', () => {
     setupExec(GOOD_SKILLS_JSON);
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; skills: Array<{ name: string }> };
@@ -151,7 +174,7 @@ describe('GET /api/skills', () => {
     const calls = setupExec(GOOD_SKILLS_JSON);
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(200);
     const configSetCall = findExecCall(calls, ['config', 'set', 'agents.defaults.workspace', mainWorkspace]);
@@ -165,7 +188,7 @@ describe('GET /api/skills', () => {
     setupExec('', GOOD_SKILLS_JSON);
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; skills: Array<{ name: string }> };
@@ -178,7 +201,7 @@ describe('GET /api/skills', () => {
     setupExec(`Config warnings: duplicate plugin id\n${GOOD_SKILLS_JSON}`);
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; skills: Array<{ name: string }> };
@@ -190,7 +213,7 @@ describe('GET /api/skills', () => {
     setupExec(`[warn] duplicate plugin id\n${GOOD_SKILLS_JSON}`);
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; skills: Array<{ name: string }> };
@@ -202,7 +225,7 @@ describe('GET /api/skills', () => {
     setupExec(`Config warnings: noisy prelude\n${GOOD_SKILLS_ARRAY_JSON}`);
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(200);
     const json = (await res.json()) as { ok: boolean; skills: Array<{ name: string }> };
@@ -223,7 +246,7 @@ describe('GET /api/skills', () => {
     };
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(502);
     const json = (await res.json()) as { ok: boolean; error: string };
@@ -235,7 +258,7 @@ describe('GET /api/skills', () => {
     setupExec('not json');
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(502);
     const json = (await res.json()) as { ok: boolean; error: string };
@@ -247,7 +270,7 @@ describe('GET /api/skills', () => {
     setupExec(JSON.stringify({ workspaceDir: '/tmp/workspace' }));
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     expect(res.status).toBe(502);
     const json = (await res.json()) as { ok: boolean; error: string };
@@ -259,7 +282,7 @@ describe('GET /api/skills', () => {
     setupExec(GOOD_SKILLS_JSON);
 
     const app = await buildApp();
-    const res = await app.request('/api/skills');
+    const res = await app.request('/api/skills?agentId=main');
 
     const json = (await res.json()) as { skills: Array<Record<string, unknown>> };
     const skill = json.skills[0];

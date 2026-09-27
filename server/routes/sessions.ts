@@ -21,6 +21,7 @@ import { spawnSubagent } from '../lib/subagent-spawn.js';
 import { normalizeAgentId } from '../lib/agent-workspace.js';
 import {
   CrossProfileForbiddenError,
+  MissingAgentIdError,
   activeProfileIdForRequest,
   assertAgentInProfile,
 } from '../lib/profiles.js';
@@ -74,9 +75,17 @@ async function loadSessionStore(): Promise<Record<string, StoredSessionSummary |
   return loadSessionStoreFromDir(config.sessionsDir);
 }
 
-function getAgentIdFromSessionKey(sessionKey: string): string {
-  const match = sessionKey.match(/^agent:([^:]+):/);
-  return match?.[1] || 'main';
+/**
+ * Owning agent for a session key, or null when the key does not identify one.
+ *
+ * FAILS CLOSED. A key that is not `agent:<id>:<something>` is not "the main
+ * agent" — it is a key we cannot attribute, and attributing it to `main` let a
+ * non-conforming key resolve to an unowned agent and take the permissive
+ * default-profile path. Unattributable means unreadable.
+ */
+function getAgentIdFromSessionKey(sessionKey: string): string | null {
+  const match = /^agent:([^:]+):(.+)$/.exec(sessionKey);
+  return match?.[1] ?? null;
 }
 
 /**
@@ -87,7 +96,7 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
  * client could read another profile's transcripts and attachments. Returns a
  * 403 response to return, or null when access is permitted.
  */
-function guardAgentProfile(c: Context, agentId: string | undefined): Response | null {
+function guardAgentProfile(c: Context, agentId: string | null | undefined): Response | null {
   try {
     assertAgentInProfile(agentId, activeProfileIdForRequest(c));
     return null;
@@ -95,7 +104,31 @@ function guardAgentProfile(c: Context, agentId: string | undefined): Response | 
     if (err instanceof CrossProfileForbiddenError) {
       return c.json({ error: 'cross_profile_forbidden' }, 403);
     }
+    if (err instanceof MissingAgentIdError) {
+      // The key named no agent, so it is not a permission denial — it is a
+      // malformed/underspecified request, and it must not fall back to a
+      // default workspace.
+      return c.json({ error: 'agentId is required' }, 400);
+    }
     throw err;
+  }
+}
+
+/**
+ * Whether a session may be shown to the active profile.
+ *
+ * Used for endpoints that return MANY sessions at once, where a pre-handler
+ * guard cannot apply: a per-session ownership filter is the only way to stop
+ * another profile's sessions leaking. Unattributable sessions are dropped
+ * (fail closed) rather than guessed at.
+ */
+function sessionBelongsToProfile(agentId: string | null, activeProfileId: string): boolean {
+  if (!agentId) return false;
+  try {
+    assertAgentInProfile(agentId, activeProfileId);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -274,6 +307,14 @@ app.get('/api/sessions/hidden', rateLimitGeneral, async (c) => {
 
   const cutoffMs = Date.now() - activeMinutes * 60_000;
 
+  // PRIVACY: this endpoint returns MANY sessions, so a pre-handler guard cannot
+  // apply. It read the global store and returned every cron session of every
+  // agent — labels, ids, model and token counts — to any authenticated client.
+  // Filter per session: keep only those whose owning agent is in the active
+  // profile, and DROP anything we cannot attribute (fail closed). The limit is
+  // applied after filtering, so a caller still gets up to `limit` of their own.
+  const activeProfileId = activeProfileIdForRequest(c);
+
   try {
     const store = await loadSessionStore();
 
@@ -281,7 +322,9 @@ app.get('/api/sessions/hidden', rateLimitGeneral, async (c) => {
       .filter(([sessionKey, session]) => {
         if (!isCronLikeSessionKey(sessionKey) || !session) return false;
         const updatedAt = typeof session.updatedAt === 'number' ? session.updatedAt : 0;
-        return updatedAt >= cutoffMs;
+        if (updatedAt < cutoffMs) return false;
+        // Ownership check — an unattributable key yields null and is dropped.
+        return sessionBelongsToProfile(getAgentIdFromSessionKey(sessionKey), activeProfileId);
       })
       .sort(([, a], [, b]) => {
         const updatedA = typeof a?.updatedAt === 'number' ? a.updatedAt : 0;
@@ -319,10 +362,11 @@ app.get('/api/sessions/runtime', rateLimitGeneral, async (c) => {
     return c.json({ ok: false, error: 'sessionKey is required' }, 400);
   }
 
+  const activeProfileId = activeProfileIdForRequest(c);
   const guard = guardAgentProfile(c, getAgentIdFromSessionKey(sessionKey));
   if (guard) return guard;
 
-  const sessionsDir = resolveSessionsDir(getAgentIdFromSessionKey(sessionKey));
+  const sessionsDir = resolveSessionsDir(getAgentIdFromSessionKey(sessionKey) ?? undefined);
   const store = await loadSessionStoreFromDir(sessionsDir).catch(() => ({} as Record<string, StoredSessionSummary | undefined>));
   const session = store[sessionKey];
   const storeThinking = session?.thinkingLevel || session?.thinking;
@@ -406,6 +450,11 @@ app.post('/api/sessions/spawn-subagent', rateLimitGeneral, async (c) => {
   }
 
   try {
+    // PRIVACY: parentSessionKey comes from the body, so without this a client
+    // could spawn a subagent into another profile's session tree.
+    const guard = guardAgentProfile(c, getAgentIdFromSessionKey(parsed.data.parentSessionKey));
+    if (guard) return guard;
+
     const result = await spawnSubagent({
       parentSessionKey: parsed.data.parentSessionKey,
       task: parsed.data.task,

@@ -7,6 +7,7 @@ import {
   DEFAULT_PROFILE_ID,
   AgentAlreadyBoundError,
   CrossProfileForbiddenError,
+  MissingAgentIdError,
   ProfileValidationError,
   createProfile,
   deleteProfile,
@@ -201,9 +202,14 @@ describe('agent → profile map', () => {
     await createProfile({ name: 'Work' });
     await createBot({ name: 'Client', agentId: 'agent:client:main' }, 'work');
 
-    // Agents nobody owns fall back to the default profile and always pass.
+    // An unowned agent falls back to the default profile and passes there.
     expect(() => assertAgentInProfile('main', DEFAULT_PROFILE_ID)).not.toThrow();
-    expect(() => assertAgentInProfile(null, DEFAULT_PROFILE_ID)).not.toThrow();
+    // A MISSING agent is not an unowned agent: it names no data at all, and
+    // used to pass — which let an underspecified request resolve to the shared
+    // root workspace. It now fails closed for every profile.
+    expect(() => assertAgentInProfile(null, DEFAULT_PROFILE_ID)).toThrow(MissingAgentIdError);
+    expect(() => assertAgentInProfile(undefined, DEFAULT_PROFILE_ID)).toThrow(MissingAgentIdError);
+    expect(() => assertAgentInProfile('', 'work')).toThrow(MissingAgentIdError);
     // A foreign agent passes in its own profile and fails in another.
     expect(() => assertAgentInProfile('client', 'work')).not.toThrow();
     expect(() => assertAgentInProfile('client', DEFAULT_PROFILE_ID)).toThrow(CrossProfileForbiddenError);

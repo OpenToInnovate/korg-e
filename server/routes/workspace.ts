@@ -22,6 +22,7 @@ import { gatewayFilesList, gatewayFilesGet, gatewayFilesSet } from '../lib/gatew
 import { createChatPathLinksTemplate } from '../lib/chat-path-links-config.js';
 import {
   CrossProfileForbiddenError,
+  MissingAgentIdError,
   assertAgentInProfile,
   activeProfileIdForRequest,
 } from '../lib/profiles.js';
@@ -51,6 +52,10 @@ async function getWorkspaceRoot(c: Context, agentId?: string): Promise<{ agentId
 function handleAgentWorkspaceError(c: Context, err: unknown) {
   if (err instanceof CrossProfileForbiddenError) {
     return c.json({ error: 'cross_profile_forbidden' }, 403);
+  }
+  if (err instanceof MissingAgentIdError) {
+    // Naming no agent used to fall through to the shared root workspace.
+    return c.json({ ok: false, error: 'agentId is required' }, 400);
   }
   if (err instanceof InvalidAgentIdError) {
     return c.json({ ok: false, error: err.message }, 400);

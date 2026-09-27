@@ -24,6 +24,7 @@ import { isWorkspaceLocal } from '../lib/workspace-detect.js';
 import { gatewayFilesGet, gatewayFilesSet } from '../lib/gateway-rpc.js';
 import {
   CrossProfileForbiddenError,
+  MissingAgentIdError,
   assertAgentInProfile,
   activeProfileIdForRequest,
 } from '../lib/profiles.js';
@@ -155,6 +156,11 @@ function resolveWorkspaceOrResponse(c: Context, agentId?: string): AgentWorkspac
   } catch (err) {
     if (err instanceof CrossProfileForbiddenError) {
       return c.json({ error: 'cross_profile_forbidden' }, 403);
+    }
+    if (err instanceof MissingAgentIdError) {
+      // Explicit, and BEFORE any workspace is resolved: a request that names no
+      // agent must never fall through to the shared root workspace.
+      return c.json({ ok: false, error: 'agentId is required' }, 400);
     }
     return c.json({ ok: false, error: 'Invalid agentId' }, 400);
   }
