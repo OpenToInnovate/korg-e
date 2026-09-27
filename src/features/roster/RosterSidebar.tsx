@@ -13,6 +13,7 @@ import { getWorkspaceAgentId } from '@/features/workspace/workspaceScope';
 import KorgeAvatar from '@/components/KorgeAvatar';
 import { isCorgiVariant } from '@/components/corgi/corgiVariants';
 import KorgeLogo from '@/components/KorgeLogo';
+import WorkingPaws from '@/components/WorkingPaws';
 import { cn } from '@/lib/utils';
 import type { RosterApi } from './useRoster';
 import type { RosterBot, RosterGroup, RosterSection } from './types';
@@ -578,6 +579,16 @@ function BotRow(props: {
               {label}
             </span>
             {bot?.pinned && <Pin size={12} className="shrink-0 text-muted-foreground" aria-label="Pinned" />}
+            {/* Working signal — driven by real per-session busy state, so a
+                bot only shows paws while the gateway says it is running. */}
+            {busy && (
+              <WorkingPaws
+                size={24}
+                seed={bot?.id ?? label}
+                className="shrink-0"
+                label={`${label} is working`}
+              />
+            )}
             <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">{timeAgo(time)}</span>
           </span>
           <span className="block truncate text-xs text-muted-foreground">

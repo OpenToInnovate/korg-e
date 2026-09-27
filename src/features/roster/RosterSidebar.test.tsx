@@ -12,6 +12,15 @@ vi.mock('@/contexts/SessionContext', () => ({
 
 const PROFILE: Profile = { id: 'p1', name: 'Sam', color: '#0A84FF', emoji: '🐺', order: 0, createdAt: 1 };
 
+function makeBot(over: Partial<RosterBot> = {}): RosterBot {
+  return {
+    id: 'b1', agentId: 'agent:builder:main', sectionId: null, avatar: '', name: 'Builder',
+    title: '', description: '', color: '#0A84FF', pinned: false, hidden: false,
+    notifications: false, enabledSkills: [], createdAt: 1, updatedAt: 1,
+    ...over,
+  };
+}
+
 /** Minimal real ProfilesApi — the switcher reads the whole list for its menu. */
 function makeProfilesApi(): ProfilesApi {
   return {
@@ -118,10 +127,58 @@ describe('RosterSidebar — profile header slot', () => {
 });
 
 /**
- * PRIVACY REGRESSION — Mir's profile must never render the adult profile's
- * agents. Live bug: orphan session rows (no roster bot record) were swept into
- * the Unassigned bucket, exposing all 19 adult agents under Mir's profile.
+ * The working signal must be visible in the roster so Tony can see which bot
+ * is busy without opening it.
  */
+describe('RosterSidebar — busy bot working signal', () => {
+  it('shows animated paws on a busy bot row', () => {
+    renderSidebar({
+      roster: makeRosterApi({ bots: [makeBot({ name: 'Builder' })] }, ['builder']),
+      busyState: { 'agent:builder:main': true },
+    });
+
+    const signal = screen.getByTestId('working-paws');
+    expect(signal).toBeInTheDocument();
+    expect(signal).toHaveAttribute('data-motion', 'animated');
+    expect(screen.getByLabelText('Builder is working')).toBeInTheDocument();
+  });
+
+  it('shows no signal on an idle bot', () => {
+    renderSidebar({
+      roster: makeRosterApi({ bots: [makeBot({ name: 'Builder' })] }, ['builder']),
+      busyState: {},
+    });
+
+    expect(screen.getByText('Builder')).toBeInTheDocument();
+    expect(screen.queryByTestId('working-paws')).toBeNull();
+  });
+
+  it('clears the signal once the bot stops being busy', () => {
+    const { rerender } = renderSidebar({
+      roster: makeRosterApi({ bots: [makeBot({ name: 'Builder' })] }, ['builder']),
+      busyState: { 'agent:builder:main': true },
+    });
+    expect(screen.getByTestId('working-paws')).toBeInTheDocument();
+
+    rerender(
+      <RosterSidebar
+        sessions={[]}
+        currentSession=""
+        busyState={{}}
+        onSelect={vi.fn()}
+        onRefresh={vi.fn()}
+        roster={makeRosterApi({ bots: [makeBot({ name: 'Builder' })] }, ['builder'])}
+        onNewBot={vi.fn()}
+        onNewGroup={vi.fn()}
+        onEditBot={vi.fn()}
+        onEditGroup={vi.fn()}
+        onEditSection={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId('working-paws')).toBeNull();
+  });
+});
 describe('RosterSidebar — cross-profile agent isolation', () => {
   const ADULT = { sessionKey: 'agent:adult-agent:main', label: 'Adult Agent' };
   const MINE = { sessionKey: 'agent:mir-tutor:main', label: 'Mir Tutor' };

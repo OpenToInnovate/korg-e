@@ -13,12 +13,19 @@ import { useReactions, type ReactionMap } from './useReactions';
 import { buildThreadMap, formatReplyPrefix, parentHash } from './threadMarkers';
 import { ApprovalCards } from './ApprovalCards';
 import { PromptCards } from '@/features/prompts/PromptCards';
+import WorkingPaws from '@/components/WorkingPaws';
 
 interface ChatPanelProps {
   messages: ChatMsg[];
   onSend: (text: string, attachments?: ImageAttachment[], uploadPayload?: OutgoingUploadPayload) => void | Promise<void>;
   onAbort: () => void;
   isGenerating: boolean;
+  /**
+   * True while a run is genuinely in flight for this conversation — including
+   * squad/sub-agent work where this panel is not itself generating. Derived by
+   * the host via useWorkingSignal; the panel never guesses.
+   */
+  workingSignal?: boolean;
   stream: ChatStreamState;
   processingStage?: ProcessingStage;
   lastEventTimestamp?: number;
@@ -84,6 +91,7 @@ export interface ChatPanelHandle {
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function ChatPanel({
   messages,
   onSend, onAbort, isGenerating, stream,
+  workingSignal = false,
   processingStage,
   lastEventTimestamp = 0, currentToolDescription = null, activityLog = [],
   onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent',
@@ -525,6 +533,19 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
       {/* Input area */}
       <PromptCards />
       <ApprovalCards />
+      {/* Working signal — sits above the composer so it stays visible however
+          far the transcript is scrolled, and clears the moment the run ends. */}
+      {workingSignal && (
+        <div
+          className="flex shrink-0 items-center gap-2 px-4 py-1.5"
+          data-testid="chat-working-signal"
+        >
+          <WorkingPaws seed={agentName} size={42} label={`${agentName} is working`} />
+          <span className="truncate text-2xs font-semibold text-muted-foreground">
+            {agentName} is working…
+          </span>
+        </div>
+      )}
       <InputBar
         ref={inputBarRef}
         onSend={onSend}

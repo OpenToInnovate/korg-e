@@ -40,6 +40,7 @@ import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { DEFAULT_CHAT_PATH_LINKS_CONFIG, parseChatPathLinksConfig } from '@/features/chat/chatPathLinks';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { useRoster } from '@/features/roster/useRoster';
+import { useWorkingSignal } from '@/features/chat/useWorkingSignal';
 import { ProfileSwitcher } from '@/features/profiles/ProfileSwitcher';
 import { useProfiles } from '@/features/profiles/useProfiles';
 import { isCorgiVariant } from '@/components/corgi/corgiVariants';
@@ -328,6 +329,19 @@ export default function App({ onLogout }: AppProps) {
     }
     return null;
   }, [roster.roster.groups, roster.roster.bots, currentSession]);
+
+  // Working signal for the chat surface. Covers squad runs: a group chat shows
+  // as working while any member bot is busy, even when this panel is idle.
+  const { working: chatWorking } = useWorkingSignal({
+    currentSession,
+    sessions,
+    busyState,
+    isGenerating,
+    memberSessionKeys: useMemo(
+      () => (currentGroup?.members ?? []).map((m) => m.agentId).filter((k): k is string => Boolean(k)),
+      [currentGroup],
+    ),
+  });
 
   // Delete the open bot: remove its session, then the profile (routines too).
   const [deleteBotConfirm, setDeleteBotConfirm] = useState(false);
@@ -916,6 +930,7 @@ export default function App({ onLogout }: AppProps) {
             onSend={handleSend}
             onAbort={handleAbort}
             isGenerating={isGenerating}
+            workingSignal={chatWorking}
             stream={stream}
             processingStage={processingStage}
             lastEventTimestamp={lastEventTimestamp}
