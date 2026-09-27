@@ -237,3 +237,34 @@ describe('invariant still enforced after provisioning', () => {
     expect(() => assertAgentInProfile('mir-tutor', MIR)).not.toThrow();
   });
 });
+
+/**
+ * Regression: an UNRECOGNISED key inside agents.entries.<id>.identity makes the
+ * whole gateway config fail validation, so the agent never registers and the bot
+ * renders as dead. `color` used to be written here. The colour belongs on the
+ * roster bot row, never in the agent identity.
+ */
+describe('provisioned agent identity is schema-clean', () => {
+  const RECOGNISED_IDENTITY_KEYS = new Set(['name', 'emoji', 'theme', 'avatar', 'description', 'user']);
+
+  it('writes no unrecognised identity keys even when a colour is supplied', async () => {
+    await provisionAgent({
+      agentId: 'website-coder',
+      name: 'Website Coder',
+      profileId: MIR,
+      color: '#30D158',
+      emoji: '🌐',
+    });
+
+    const cfg = await readConfig();
+    const identity = cfg.agents?.entries?.['website-coder']?.identity as Record<string, unknown> | undefined;
+
+    expect(identity).toBeDefined();
+    const stray = Object.keys(identity ?? {}).filter((k) => !RECOGNISED_IDENTITY_KEYS.has(k));
+    expect(stray, `unrecognised identity keys would break gateway config: ${stray.join(', ')}`).toEqual([]);
+
+    // The values that ARE valid must still be written.
+    expect(identity?.name).toBe('Website Coder');
+    expect(identity?.emoji).toBe('🌐');
+  });
+});

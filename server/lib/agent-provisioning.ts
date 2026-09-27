@@ -238,7 +238,9 @@ export async function provisionAgent(input: ProvisionAgentInput): Promise<Provis
       agentDir,
       identity: {
         name: input.name,
-        ...(input.color ? { color: input.color } : {}),
+        // Only schema-recognised identity keys belong here. An unknown key
+        // (e.g. `color`) makes the whole gateway config fail validation and
+        // the agent never registers. Colour lives on the roster bot row.
         ...(input.emoji ? { emoji: input.emoji } : {}),
       },
     },
